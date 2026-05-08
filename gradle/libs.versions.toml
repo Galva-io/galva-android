@@ -1,0 +1,34 @@
+[versions]
+agp = "9.0.0"
+kotlin = "2.3.0"
+ksp = "2.3.4"
+room = "2.8.4"
+
+appcompat = "1.7.1"
+material = "1.13.0"
+coreKtx = "1.18.0"
+
+[libraries]
+
+material = { group = "com.google.android.material", name = "material", version.ref = "material" }
+androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
+
+android-gradlePlugin = { group = "com.android.tools.build", name = "gradle", version.ref = "agp" }
+kotlin-gradlePlugin = { group = "org.jetbrains.kotlin", name = "kotlin-gradle-plugin", version.ref = "kotlin" }
+room-compiler = {group = "androidx.room",name="room-compiler", version.ref = "room"}
+room-ktx = {group = "androidx.room", name="room-ktx", version.ref = "room"}
+room-runtime = {group = "androidx.room", name="room-runtime", version.ref = "room"}
+ksp-gradlePlugin = { group = "com.google.devtools.ksp", name = "com.google.devtools.ksp.gradle.plugin", version.ref = "ksp" }
+room-gradlePlugin = { group = "androidx.room", name = "room-gradle-plugin", version.ref = "room" }
+
+[plugins]
+android-application = {id = "com.android.application" ,version.ref = "agp"}
+ksp-android = {id = "com.google.devtools.ksp" ,version.ref = "ksp"}
+room-android = {id = "androidx.room" ,version.ref = "room"}
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+
+# galva sdk convention plugins
+galva-android-application = {id = "io.galva.android.sdk.application"}
+galva-android-library = {id = "io.galva.android.sdk.library"}
+galva-android-room = {id = "io.galva.android.sdk.room"}
