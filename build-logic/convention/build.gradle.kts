@@ -2,7 +2,7 @@ plugins {
     `kotlin-dsl`
 }
 
-group = "io.galva.android.sdk.buildlogic"
+group = "io.galva.sdk.buildlogic"
 
 java {
     sourceCompatibility = JavaVersion.VERSION_17
@@ -13,8 +13,9 @@ java {
 dependencies {
     compileOnly(libs.android.gradlePlugin)
     compileOnly(libs.kotlin.gradlePlugin)
-    compileOnly(libs.ksp.gradlePlugin)
-    compileOnly(libs.room.gradlePlugin)
+    implementation(libs.kover.gradlePlugin)
+    implementation(libs.kotlinx.serialization.core)
+    implementation(libs.maven.publish.gradle)
 }
 gradlePlugin {
     plugins {
@@ -27,9 +28,13 @@ gradlePlugin {
             id = libs.plugins.galva.android.library.get().pluginId
             implementationClass = "AndroidLibraryConventionPlugin"
         }
-        register("androidRoom") {
-            id = libs.plugins.galva.android.room.get().pluginId
-            implementationClass = "AndroidRoomConventionPlugin"
+        register("serialization") {
+            id = libs.plugins.galva.serialization.get().pluginId
+            implementationClass = "SerializationConventionPlugin"
+        }
+        register("publishing") {
+            id = libs.plugins.galva.publishing.get().pluginId
+            implementationClass = "MavenPublishingConventionPlugin"
         }
     }
 }

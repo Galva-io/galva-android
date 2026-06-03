@@ -11,8 +11,18 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        mavenLocal()
     }
 }
+
 rootProject.name = "galva-android-sdk"
 include(":app")
+include(":galva-sdk")
+include(":core")
 include(":identity")
+include(":local-storage")
+include(":common")
+include(":network")
+include(":billing")
+include(":operation-queue")
+include(":inapp-message")
