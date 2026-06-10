@@ -112,6 +112,14 @@ class MainActivity : AppCompatActivity() {
     }
 }
 ```
+### 4. Enable FCM push notifications
+```kotlin
+class MyFirebaseService : FirebaseMessagingService() {
+    override fun onNewToken(token: String) {
+        Galva.instance.setPushToken(token)
+    }
+}
+```
 
 ---
 

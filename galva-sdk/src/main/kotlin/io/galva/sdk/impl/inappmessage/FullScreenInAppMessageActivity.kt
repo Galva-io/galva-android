@@ -30,9 +30,13 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.InternalSerializationApi
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonObject
 import java.util.Calendar
 import java.util.Locale
 
@@ -45,7 +49,7 @@ class FullScreenInAppMessageActivity : InAppMessageActivity() {
         InAppMessageViewModelFactory(
             Galva.instance.billingManager,
             HttpAPIIamService(
-                if(BuildConfig.ENVIRONMENT == "DEVELOPMENT") io.galva.sdk.core.BuildConfig.BASE_API_URL else io.galva.sdk.core.BuildConfig.BASE_API_URL_PROD,
+                Galva.instance.configuration.env.baseAPIUrl,
                 httpClient,
                 Galva.instance.logger,
                 ExponentialBackoffRetryPolicy()
@@ -60,11 +64,11 @@ class FullScreenInAppMessageActivity : InAppMessageActivity() {
         fun createIntent(
             context: Context,
             bundleHtmlFilePath: String,
-            payload: String?,
+            payload: JsonObject?,
         ): Intent {
             return Intent(context, FullScreenInAppMessageActivity::class.java).apply {
                 putExtra(EXTRA_HTML_FILE_PATH, bundleHtmlFilePath)
-                putExtra(EXTRA_PAYLOAD, payload)
+                putExtra(EXTRA_PAYLOAD, payload?.toString())
 
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
@@ -90,7 +94,7 @@ class FullScreenInAppMessageActivity : InAppMessageActivity() {
             withContext(Dispatchers.Main) {
                 if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
                     sendMessageToWebView(
-                        requestId, JsonUtils.defaultJson.encodeToString(pageContext)
+                        requestId, JsonUtils.defaultJson.encodeToJsonElement(pageContext)
                     )
                 }
             }
@@ -113,11 +117,13 @@ class FullScreenInAppMessageActivity : InAppMessageActivity() {
                 offerId
             )
                 .collectLatest { state ->
+                    println("Billing flow state at activity: $state")
                     withContext(Dispatchers.Main.immediate) {
-                        if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+                        println("Billing flow state at activity: $state verify: ${isDestroyed.not() && isFinishing.not()}")
+                        if (isDestroyed.not() && isFinishing.not()) {
                             val result: JsonObject? = when (state) {
                                 is BillingLaunchState.Cancelled -> {
-
+                                    println("Purchase cancelled: $state")
                                     JsonObject(
                                         mapOf(
                                             "outcome" to JsonPrimitive("cancelled"),
@@ -152,6 +158,7 @@ class FullScreenInAppMessageActivity : InAppMessageActivity() {
                                 }
 
                                 is BillingLaunchState.Failed -> {
+                                    println("Purchase failed: responseCode:${state.responseCode} reason:${state.reason}")
                                     JsonObject(
                                         mapOf(
                                             "outcome" to JsonPrimitive("cancelled"),
@@ -165,17 +172,12 @@ class FullScreenInAppMessageActivity : InAppMessageActivity() {
 
                                 is BillingLaunchState.Showing -> {
                                     // ask to buy
-                                    JsonObject(
-                                        mapOf(
-                                            "outcome" to JsonPrimitive("pending"),
-                                        )
-                                    )
+                                   null
                                 }
                             }
-
                             result?.let { resultToSend ->
                                 sendMessageToWebView(
-                                    requestId, resultToSend.toString()
+                                    requestId, resultToSend
                                 )
                             }
 
@@ -192,7 +194,8 @@ class FullScreenInAppMessageActivity : InAppMessageActivity() {
         super.onGetProductPrice(requestId, productId, basePlanId, offerId)
         viewModel.viewModelScope.launch(Dispatchers.IO) {
             val productPrice = viewModel.getProductPrice(productId, basePlanId, offerId)
-            val jsonPayload = JsonUtils.defaultJson.encodeToString(productPrice)
+            println("Galva - Product price fetched: $productPrice for productId: $productId, basePlanId: $basePlanId, offerId: $offerId")
+            val jsonPayload = JsonUtils.defaultJson.encodeToJsonElement(productPrice)
             withContext(Dispatchers.Main) {
                 if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
                     sendMessageToWebView(requestId, jsonPayload)
@@ -206,7 +209,7 @@ class FullScreenInAppMessageActivity : InAppMessageActivity() {
         CoroutineScope(Dispatchers.IO).launch {
             val response = viewModel.doApiFetch(payload)
             if (response is ServiceResult.Success<APIFetchResult>) {
-                val jsonPayload = JsonUtils.defaultJson.encodeToString(response.value)
+                val jsonPayload = JsonUtils.defaultJson.encodeToJsonElement(response.value)
                 withContext(Dispatchers.Main) {
                     if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
                         sendMessageToWebView(requestId, jsonPayload)
@@ -241,11 +244,9 @@ class FullScreenInAppMessageActivity : InAppMessageActivity() {
                 "default" -> {
                     builder.setPositiveButton(action.title) { dialog, _ ->
                         sendMessageToWebView(
-                            requestId, JsonUtils.defaultJson.encodeToString(
-                                mapOf(
-                                    "actionId" to action.id
-                                )
-                            )
+                            requestId, JsonObject(mapOf(
+                                "actionId" to JsonPrimitive(action.id)
+                            ))
                         )
                         dialog.dismiss()
                     }
@@ -254,11 +255,9 @@ class FullScreenInAppMessageActivity : InAppMessageActivity() {
                 "cancel" -> {
                     builder.setNegativeButton(action.title) { dialog, _ ->
                         sendMessageToWebView(
-                            requestId, JsonUtils.defaultJson.encodeToString(
-                                mapOf(
-                                    "actionId" to action.id
-                                )
-                            )
+                            requestId, JsonObject(mapOf(
+                                "actionId" to JsonPrimitive(action.id)
+                            ))
                         )
                         dialog.dismiss()
                     }
@@ -267,11 +266,9 @@ class FullScreenInAppMessageActivity : InAppMessageActivity() {
                 "destructive" -> {
                     builder.setNeutralButton(action.title) { dialog, _ ->
                         sendMessageToWebView(
-                            requestId, JsonUtils.defaultJson.encodeToString(
-                                mapOf(
-                                    "actionId" to action.id
-                                )
-                            )
+                            requestId, JsonObject(mapOf(
+                                "actionId" to JsonPrimitive(action.id)
+                            ))
                         )
                         dialog.dismiss()
                     }
@@ -282,11 +279,9 @@ class FullScreenInAppMessageActivity : InAppMessageActivity() {
 
         builder.setNegativeButton("Cancel") { dialog, _ ->
             sendMessageToWebView(
-                requestId, JsonUtils.defaultJson.encodeToString(
-                    mapOf(
-                        "actionId" to null
-                    )
-                )
+                requestId, JsonObject(mapOf(
+                    "actionId" to JsonNull
+                ))
             )
             dialog.dismiss()
         }

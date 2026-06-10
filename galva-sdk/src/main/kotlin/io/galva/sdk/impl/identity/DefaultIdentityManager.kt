@@ -74,6 +74,18 @@ class DefaultIdentityManager(
         }
     }
 
+    override suspend fun setPushToken(token: String) {
+        update {
+            it.copy(pushToken = token)
+        }
+    }
+
+    override suspend fun clearPushToken() {
+        update {
+            it.copy(pushToken = null)
+        }
+    }
+
 
     override suspend fun logout() {
         update {

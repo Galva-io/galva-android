@@ -125,7 +125,7 @@ class MavenPublishingConventionPlugin : Plugin<Project> {
     }
     private fun publishTargetToEnv(target: String): String = when (target) {
         "mavenLocal" -> "DEVELOPMENT"
-        "githubPackages" -> "DEVELOPMENT"
+        "githubPackages" -> "PRODUCTION"
         "mavenCentral" -> "PRODUCTION"
         else -> "DEVELOPMENT"
     }

@@ -24,6 +24,7 @@ import io.galva.network.android.HttpAPIProductService
 import io.galva.network.android.HttpAPISDKService
 import io.galva.network.android.OkHttpClientBuilder
 import io.galva.network.request.sdk.InitConfigSdkRequest
+import io.galva.operation_queue.policy.SizeOrTimeoutBatchPolicy
 import io.galva.sdk.impl.billing.DefaultBillingManager
 import io.galva.sdk.impl.billing.GalvaProductIdSource
 import io.galva.sdk.impl.identity.DefaultIdentityManager
@@ -36,6 +37,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
@@ -63,6 +65,8 @@ class Galva @VisibleForTesting internal constructor(
     @Volatile
     private var _billingManager: BillingManager? = null
 
+    private val channel = Channel<GalvaEvent>(Channel.UNLIMITED)
+
     val isConfigured: Boolean get() = config != null
 
     val configuration: Configuration
@@ -81,6 +85,23 @@ class Galva @VisibleForTesting internal constructor(
     val billingManager: BillingManager
         get() = _billingManager
             ?: error("Galva not configured. Call Galva.instance.configure(...) first.")
+
+    private  fun startProcessingGalvaEvents(){
+        galvaScope.launch(Dispatchers.IO) {
+            for (event in channel) {
+                when (event) {
+                    is GalvaEvent.Identify -> identifyInternal(
+                        event.userId, event.email, event.obfuscatedAccountId
+                    )
+
+                    is GalvaEvent.SetPushToken -> setPushTokenInternal(event.token)
+                    is GalvaEvent.ClearPushToken -> clearPushTokenInternal()
+                    is GalvaEvent.UpdateProperties -> updatePropertiesInternal(event.properties)
+                    GalvaEvent.Logout -> logoutInternal()
+                }
+            }
+        }
+    }
 
     @Synchronized
     @JvmName("configureInternal")
@@ -105,29 +126,29 @@ class Galva @VisibleForTesting internal constructor(
         val httpClient = OkHttpClientBuilder().apiKey(configuration.apiKey)
             .sdkVersion("android/${io.galva.sdk.BuildConfig.SDK_VERSION}").logger(logger).build()
         val identifyService = HttpAPIIdentifyService(
-            baseURL = if (BuildConfig.ENVIRONMENT == "DEVELOPMENT") io.galva.sdk.core.BuildConfig.BASE_API_URL else io.galva.sdk.core.BuildConfig.BASE_API_URL_PROD,
+            baseURL = configuration.env.baseAPIUrl,
             httpClient = httpClient,
             logger = logger,
         )
 
         val bundleCache = WebViewBundleCache(File(context.filesDir, "webview_bundles"))
         val bundleDownloader = WebViewBundleDownloader(
-            httpClient,
-            if (BuildConfig.ENVIRONMENT == "DEVELOPMENT") io.galva.sdk.iam.BuildConfig.WEBVIEW_BUNDLE_BASE_URL else io.galva.sdk.iam.BuildConfig.BASE_WEBVIEW_IAM_URL_PROD
+            httpClient, configuration.env.baseWebviewUrl
         )
         val webViewBundleResolver = WebViewBundleResolver(bundleCache, bundleDownloader, logger)
 
         val sdkInitClient = HttpAPISDKService(
-            baseURL = if (BuildConfig.ENVIRONMENT == "DEVELOPMENT") io.galva.sdk.core.BuildConfig.BASE_API_URL else io.galva.sdk.core.BuildConfig.BASE_API_URL_PROD,
-            httpClient,
-            logger
+            baseURL = configuration.env.baseAPIUrl, httpClient, logger
         )
+        val batchPolicy = SizeOrTimeoutBatchPolicy(10, 10.seconds)
         val configStore = SdkInitializeConfigStore(sdkInitClient, keyValueStorage = keyValueStorage)
         _billingManager = DefaultBillingManager.create(
             context, logger, GalvaProductIdSource(
                 configStore
             ), galvaScope
-        )
+        ).apply {
+            initialize()
+        }
         _inAppMessageManager = DefaultInAppMessagingManager.create(
             logger = logger,
             identityService = identifyService,
@@ -136,26 +157,23 @@ class Galva @VisibleForTesting internal constructor(
             messageOverlay = ScreenMessageOverlay(),
             billingManager = billingManager
         )
+        _operationManager = DefaultOperationManager.create(
+            context,
+            identifyService,
+            galvaScope,
+            logger,
+            batchPolicy,
+        )
         galvaScope.launch(Dispatchers.IO) {
             identity.initialize()
             val config = configStore.loadAndSaveConfig()
-            billingManager.initialize()
+            billingManager.loadProducts()
             val maxBatchSize = max(config?.data?.batchCollection?.flushSize ?: 10, 10)
             val maxBatchWaitingTime = maxOf(
                 config?.data?.batchCollection?.flushIntervalMs?.milliseconds ?: 10_000.milliseconds,
                 10.seconds
             )
-            _operationManager = DefaultOperationManager.create(
-                context,
-                identifyService,
-                galvaScope,
-                logger,
-                maxBatchSize = maxBatchSize,
-                maxBatchWaitTime = maxBatchWaitingTime
-            ).also {
-                it.startRecordOperation()
-            }
-
+            batchPolicy.update(maxBatchSize, maxBatchWaitingTime)
             if (identity.current.firstCreated) {
                 operationManager.recordOperation(
                     APIOperation.CreateAnonymousId(
@@ -163,52 +181,105 @@ class Galva @VisibleForTesting internal constructor(
                     )
                 )
             }
+            startProcessingGalvaEvents()
             config?.data?.webviewVersions?.map { webviewVersion ->
                 async(Dispatchers.IO) {
                     webViewBundleResolver.doDownload(webviewVersion)
                 }
             }?.awaitAll()
-
         }
         log(configuration.logLevel, "Galva configured (apiKey=${configuration.apiKey})")
     }
 
     fun identify(userId: String, email: String? = null, obfuscatedAccountId: String? = null) {
-        galvaScope.launch {
-            identity.identify(userId, email, obfuscatedAccountId)
-            operationManager.recordOperation(
-                APIOperation.Identify(
-                    anonymousId = identity.current.anonymousId,
-                    userId = userId,
-                    obfuscatedAccountId = obfuscatedAccountId,
-                    email = email
-                )
+        channel.trySend(GalvaEvent.Identify(userId, email, obfuscatedAccountId))
+    }
+
+    private suspend fun identifyInternal(
+        userId: String, email: String? = null, obfuscatedAccountId: String? = null
+    ) {
+        identity.identify(userId, email, obfuscatedAccountId)
+        operationManager.recordOperation(
+            APIOperation.Identify(
+                anonymousId = identity.current.anonymousId,
+                userId = userId,
+                obfuscatedAccountId = obfuscatedAccountId,
+                email = email
             )
+        )
+    }
+
+    fun setPushToken(token: String) {
+        channel.trySend(GalvaEvent.SetPushToken(token))
+    }
+
+    private suspend fun setPushTokenInternal(token: String) {
+        val invalidToken = identity.current.pushToken
+        if (!(invalidToken.isNullOrEmpty())) {
+            log(
+                LogLevel.INFO,
+                "Overriding existing push token: $invalidToken with new token: $token"
+            )
+            clearInvalidPushTokenInternal(invalidToken)
         }
+        identity.setPushToken(token)
+        operationManager.recordOperation(
+            APIOperation.SetPushToken(
+                anonymousId = identity.current.anonymousId, token = token
+            )
+        )
+    }
+
+
+    private suspend fun clearInvalidPushTokenInternal(pushToken: String) {
+        identity.clearPushToken()
+        operationManager.recordOperation(
+            APIOperation.ClearPushToken(
+                anonymousId = identity.current.anonymousId, token = pushToken
+            )
+        )
+    }
+
+    fun clearPushToken() {
+        channel.trySend(GalvaEvent.ClearPushToken)
+    }
+
+    private suspend fun clearPushTokenInternal() {
+        val currentToken = identity.current.pushToken ?: return
+        clearInvalidPushTokenInternal(currentToken)
     }
 
 
     fun updateProperties(vararg properties: ProfileProperty) {
-        galvaScope.launch {
-            val propertyObject = JsonObject(
-                properties.associate { property ->
-                    property.key to property.propertyValue
-                })
-            identity.updateUserProperties(propertyObject)
-            operationManager.recordOperation(
-                APIOperation.UpdateUserProperties(
-                    identity.current.anonymousId, propertyObject
-                )
+        channel.trySend(GalvaEvent.UpdateProperties(properties.toList()))
+    }
+
+    private suspend fun updatePropertiesInternal(properties: List<ProfileProperty>) {
+        val propertyObject = JsonObject(
+            properties.associate { property ->
+                property.key to property.propertyValue
+            })
+        identity.updateUserProperties(propertyObject)
+        operationManager.recordOperation(
+            APIOperation.UpdateUserProperties(
+                identity.current.anonymousId, propertyObject
             )
-        }
+        )
     }
 
     fun logout() {
-        galvaScope.launch {
-            identity.logout()
-            operationManager.clearAllOperation()
-            operationManager.recordOperation(APIOperation.CreateAnonymousId(identity.current.anonymousId,identity.current.obfuscatedAccountId))
-        }
+        channel.trySend(GalvaEvent.Logout)
+    }
+
+    private suspend fun logoutInternal() {
+        clearPushTokenInternal()
+        identity.logout()
+        operationManager.clearAllOperation()
+        operationManager.recordOperation(
+            APIOperation.CreateAnonymousId(
+                identity.current.anonymousId, identity.current.obfuscatedAccountId
+            )
+        )
     }
 
     fun getInAppMessage(): Flow<Message> {
@@ -264,5 +335,16 @@ class Galva @VisibleForTesting internal constructor(
             instance.configure(context, configuration)
 
 
+    }
+
+    internal sealed class GalvaEvent {
+        data class Identify(
+            val userId: String, val email: String?, val obfuscatedAccountId: String?
+        ) : GalvaEvent()
+
+        data class SetPushToken(val token: String) : GalvaEvent()
+        data object ClearPushToken : GalvaEvent()
+        data class UpdateProperties(val properties: List<ProfileProperty>) : GalvaEvent()
+        object Logout : GalvaEvent()
     }
 }

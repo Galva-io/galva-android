@@ -57,9 +57,6 @@ class DefaultBillingManager(
             runCatching {
                 connection.ensureConnectedWithRetry()
                 launch {
-                    loadProducts()
-                }
-                launch {
                     // load storefront country code on initialization to cache result for later use during purchase flow
                     getStorefrontCountryCode()
                 }
@@ -130,8 +127,8 @@ class DefaultBillingManager(
         }
     }.flowOn(launchDispatcher)
 
-    override fun getProductCatalog(productId: String): Flow<ProductCatalog?> {
-        return catalogStore.observeProduct(productId)
+    override suspend fun getProductCatalog(productId: String): ProductCatalog? {
+        return catalogStore.getProductWithOffers(productId)
     }
 
     /** Tear down billing client + caches; safe to call from Galva.shutdown(). */

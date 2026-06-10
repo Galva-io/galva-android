@@ -32,5 +32,5 @@ interface BillingManager {
         obfuscatedAccountId: String? = null,
     ): Flow<BillingLaunchState>
 
-    fun getProductCatalog(productId: String): Flow<ProductCatalog?>
+    suspend fun getProductCatalog(productId: String): ProductCatalog?
 }

@@ -1,6 +1,11 @@
 package io.galva.sdk.impl.operation
 
 import android.content.Context
+import android.util.Log
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
+import io.galva.common.lifecycle.AppLifecycleObserver
+import io.galva.common.lifecycle.AppLifecycleState
 import io.galva.common.logger.Logger
 import io.galva.common.network.ExponentialBackoffRetryPolicy
 import io.galva.common.utils.AdvertisingIdRetriever
@@ -17,17 +22,57 @@ import io.galva.operation_queue.OperationQueue
 import io.galva.operation_queue.local.OperationsSqliteHelper
 import io.galva.operation_queue.local.SqliteOperationStore
 import io.galva.operation_queue.networkgate.StreamNetworkGate
-import io.galva.operation_queue.policy.SizeOrTimeoutBatchPolicy
+import io.galva.operation_queue.policy.BatchPolicy
 import io.galva.sdk.impl.adsvertise.GMSAdvertisingProvider
+import io.galva.sdk.impl.inappmessage.AndroidAppLifecycleObserver
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.launch
+import kotlinx.serialization.encodeToString
 import kotlin.time.Duration.Companion.minutes
-import kotlin.time.Duration.Companion.seconds
 import kotlin.uuid.ExperimentalUuidApi
 
 @OptIn(ExperimentalUuidApi::class)
 class DefaultOperationManager internal constructor(
-    val operationQueue: OperationQueue, private val converter: OperationRequestConverter
+    private val lifecycleObserver: AppLifecycleObserver,
+    val operationQueue: OperationQueue,
+    private val converter: OperationRequestConverter,
+    operationScope: CoroutineScope = CoroutineScope(Dispatchers.IO)
 ) : OperationManager {
+    private fun foregroundTrigger(): Flow<AppLifecycleState> = callbackFlow {
+        val subscriptionDeferred = async(Dispatchers.Main.immediate) {
+            lifecycleObserver.observe {
+                trySend(it)
+            }
+        }
+        awaitClose {
+            launch(Dispatchers.Main.immediate) {
+                subscriptionDeferred.await().close()
+            }
+        }
+    }
+
+    init {
+        operationScope.launch {
+            foregroundTrigger().onStart {
+                emit(AppLifecycleState.FOREGROUND) // trigger initial sync when start
+            }.distinctUntilChanged().collectLatest {
+                when (it) {
+                    AppLifecycleState.FOREGROUND -> startRecordOperation()
+                    AppLifecycleState.BACKGROUND -> stopRecordOperation()
+                }
+            }
+        }
+
+    }
+
     override suspend fun recordOperation(apiOperation: APIOperation) {
         val batchMessage = converter.operationToBatchMessage(apiOperation)
         val payload = JsonUtils.defaultJson.encodeToString(batchMessage)
@@ -52,8 +97,8 @@ class DefaultOperationManager internal constructor(
             identifyService: IdentifyService,
             queueHandleScope: CoroutineScope,
             logger: Logger,
-            maxBatchSize: Int = 10,
-            maxBatchWaitTime: kotlin.time.Duration = 10.seconds
+            batchPolicy: BatchPolicy,
+            lifecycleOwner: LifecycleOwner = ProcessLifecycleOwner.get()
         ): DefaultOperationManager {
             val helper = OperationsSqliteHelper(context)
             val operationStore = SqliteOperationStore(helper, logger)
@@ -61,7 +106,6 @@ class DefaultOperationManager internal constructor(
                 identifyService,
                 logger
             )
-            val batchPolicy = SizeOrTimeoutBatchPolicy(maxBatchSize, maxBatchWaitTime)
             val networkMonitor = DefaultNetworkMonitor(context)
             val requestConverter = DefaultOperationRequestConverter(
                 context, GMSAdvertisingProvider(
@@ -82,7 +126,11 @@ class DefaultOperationManager internal constructor(
                 transitionTrigger = OfflineToOnlineTrigger(networkMonitor),
                 scope = queueHandleScope,
             )
-            return DefaultOperationManager(operationQueue, requestConverter)
+            val lifecycleObserver = AndroidAppLifecycleObserver(lifecycleOwner)
+            return DefaultOperationManager(
+                lifecycleObserver, operationQueue, requestConverter,
+                queueHandleScope
+            )
         }
     }
 }

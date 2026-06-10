@@ -16,6 +16,7 @@ datastore = "1.2.1"
 okhttp3 = "5.3.2"
 androidDesugarJdkLibs = "2.1.5"
 lifecycle = "2.9.4"
+serialization = "1.6.0"
 webkit = "1.16.0"
 billing = "8.0.0"
 mockito = "6.3.0"
@@ -34,8 +35,8 @@ android-desugarJdkLibs = { group = "com.android.tools", name = "desugar_jdk_libs
 android-gradlePlugin = { group = "com.android.tools.build", name = "gradle", version.ref = "agp" }
 kotlin-gradlePlugin = { group = "org.jetbrains.kotlin", name = "kotlin-gradle-plugin", version.ref = "kotlin" }
 kover-gradlePlugin = {group= "org.jetbrains.kotlinx" ,name = "kover-gradle-plugin", version.ref = "kover"}
-kotlinx-serialization-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-core", version.ref = "kotlinxCoroutines" }
-kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxCoroutines" }
+kotlinx-serialization-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-core", version.ref = "serialization" }
+kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serialization" }
 kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "kotlinxCoroutines" }
 mockwebserver = {group = "com.squareup.okhttp3", name = "mockwebserver", version.ref = "okhttp3"}
 maven-publish-gradle = {group="com.vanniktech", name="gradle-maven-publish-plugin",version.ref="vanniktech"}

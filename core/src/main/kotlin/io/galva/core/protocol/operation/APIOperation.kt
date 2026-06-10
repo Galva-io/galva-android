@@ -25,6 +25,16 @@ sealed class APIOperation {
             get() = "IdentityMessage"
     }
 
+    data class SetPushToken(val anonymousId: String,val token: String) : APIOperation() {
+        override val opType: String
+            get() = "CreateCommunicationEndpointMessage"
+    }
+
+    data class ClearPushToken(val anonymousId: String,val token: String) : APIOperation() {
+        override val opType: String
+            get() = "DeleteCommunicationEndpointMessage"
+    }
+
 }
 
 

@@ -15,6 +15,8 @@ interface  CatalogStore {
 
     fun observeProduct(sku: String): Flow<ProductCatalog?>
 
+   suspend fun getProductWithOffers(sku: String): ProductCatalog?
+
     /** Convenience lookups (use indexed Room queries; fast). */
     suspend fun getProduct(sku: String): Product?
     suspend fun getOffer(token: String): Offer?

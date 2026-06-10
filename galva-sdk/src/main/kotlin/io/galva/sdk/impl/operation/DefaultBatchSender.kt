@@ -6,6 +6,8 @@ import io.galva.common.utils.DateTimeFormatUtils
 import io.galva.common.utils.JsonUtils
 import io.galva.network.request.BatchCollectRequest
 import io.galva.network.request.messages.AliasMessage
+import io.galva.network.request.messages.CreateCommunicationEndpointMessage
+import io.galva.network.request.messages.DeleteCommunicationEndpointMessage
 import io.galva.network.request.messages.IdentityMessage
 import io.galva.network.request.messages.TrackMessage
 import io.galva.network.service.IdentifyService
@@ -55,6 +57,29 @@ class DefaultBatchSender(private val service: IdentifyService,
                     } }.onFailure {
                         logger.error {
                             "Failed to decode TrackMessage with payload: ${operation.payload}"
+                        }
+                    }.getOrNull()
+                }
+
+                "CreateCommunicationEndpointMessage" ->{
+                    runCatching { JsonUtils.defaultJson.decodeFromString<CreateCommunicationEndpointMessage>(operation.payload).also {
+                        logger.info {
+                            "Decoded CreateCommunicationEndpointMessage: $it"
+                        }
+                    } }.onFailure {
+                        logger.error {
+                            "Failed to decode CreateCommunicationEndpointMessage with payload: ${operation.payload}"
+                        }
+                    }.getOrNull()
+                }
+                "DeleteCommunicationEndpointMessage" ->{
+                    runCatching { JsonUtils.defaultJson.decodeFromString<DeleteCommunicationEndpointMessage>(operation.payload).also {
+                        logger.info {
+                            "Decoded DeleteCommunicationEndpointMessage: $it"
+                        }
+                    } }.onFailure {
+                        logger.error {
+                            "Failed to decode DeleteCommunicationEndpointMessage with payload: ${operation.payload}"
                         }
                     }.getOrNull()
                 }

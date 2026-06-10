@@ -1,6 +1,5 @@
 package io.galva.iam
 
-import android.R.id.message
 import io.galva.common.logger.NoOpLogger
 import io.galva.iam.bundle.WebViewBundleCache
 import io.galva.iam.bundle.WebViewBundleDownloader

@@ -15,6 +15,7 @@ import androidx.lifecycle.lifecycleScope
 import io.galva.common.utils.JsonUtils
 import io.galva.iam.bridge.BridgeMessage
 import io.galva.iam.bridge.BridgeResponse
+import io.galva.iam.bridge.BridgeStringResponse
 import io.galva.iam.bridge.JSBridge
 import io.galva.iam.bridge.JSBridgeCallback
 import io.galva.iam.bridge.ShowAlertOptions
@@ -22,6 +23,9 @@ import io.galva.network.request.APIFetchRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.serialization.InternalSerializationApi
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 
 abstract class InAppMessageActivity : ComponentActivity(), JSBridgeCallback {
 
@@ -127,7 +131,7 @@ abstract class InAppMessageActivity : ComponentActivity(), JSBridgeCallback {
 
     override fun onGetMessageData(requestId: String,) {
         val messagePayload = getPayloadJsonData() ?: return
-        sendMessageToWebView(requestId,messagePayload)
+        sendStringMessageToWebView(requestId,messagePayload)
     }
 
     override fun onRequestPurchase(requestId: String,productId: String,basePlanId:String, offerId: String) {
@@ -166,10 +170,24 @@ abstract class InAppMessageActivity : ComponentActivity(), JSBridgeCallback {
         }
     }
 
-    protected fun sendMessageToWebView(requestId: String, jsonPayload: String){
+    protected fun sendMessageToWebView(requestId: String, jsonPayload: JsonElement){
         if(lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)){
             lifecycleScope.launch(Dispatchers.Main){
                 val payload = BridgeResponse(
+                    result = jsonPayload,
+                    requestId = requestId
+                )
+                Log.e("InAppMessageActivity","Sending message to WebView: ${JsonUtils.defaultJson.encodeToString(payload)}")
+                webView.evaluateJavascript("window.handleNativeMessage(${JsonUtils.defaultJson.encodeToString(payload)})", null)
+            }
+        }
+
+    }
+
+    protected fun sendStringMessageToWebView(requestId: String, jsonPayload: String){
+        if(lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)){
+            lifecycleScope.launch(Dispatchers.Main){
+                val payload = BridgeStringResponse(
                     result = jsonPayload,
                     requestId = requestId
                 )

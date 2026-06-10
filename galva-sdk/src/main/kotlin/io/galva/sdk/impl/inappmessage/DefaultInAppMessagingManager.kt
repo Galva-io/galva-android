@@ -1,13 +1,14 @@
 package io.galva.sdk.impl.inappmessage
 
 import android.app.Activity
-import android.content.Context
-import android.telephony.TelephonyManager
+
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import io.galva.billing.BillingManager
+import io.galva.common.lifecycle.AppLifecycleObserver
+import io.galva.common.lifecycle.AppLifecycleState
 import io.galva.common.logger.Logger
-import io.galva.iam.AppLifecycleObserver
+
 import io.galva.iam.InAppMessagingManager
 import io.galva.iam.Message
 import io.galva.iam.MessageOverlay
@@ -30,9 +31,11 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -41,7 +44,7 @@ import kotlin.time.Duration.Companion.minutes
 
 class DefaultInAppMessagingManager private constructor(
     private val lifecycleObserver: AppLifecycleObserver,
-    private val pollInterval: Duration = 5.minutes,
+    private val pollInterval: Duration = 1.minutes,
     private val logger: Logger,
     private val identityService: IdentifyService,
     private val messageOverlay: MessageOverlay,
@@ -52,7 +55,12 @@ class DefaultInAppMessagingManager private constructor(
 ) : InAppMessagingManager {
     private fun foregroundTrigger(): Flow<Unit> = callbackFlow {
         val subscriptionDeferred = async(Dispatchers.Main.immediate) {
-            lifecycleObserver.observe { trySend(Unit) }
+            lifecycleObserver.observe(onEvent = {
+                when(it) {
+                    AppLifecycleState.FOREGROUND -> trySend(Unit)
+                    AppLifecycleState.BACKGROUND -> {}
+                }
+            })
         }
         awaitClose {
             launch(Dispatchers.Main.immediate) {
@@ -70,11 +78,13 @@ class DefaultInAppMessagingManager private constructor(
     }
 
     override val messages: Flow<Message> = merge(
-        foregroundTrigger(),
+        foregroundTrigger().onStart {
+            emit(Unit)
+        },
         pollTrigger(),
     ).mapNotNull {
         fetchMessage()
-    }
+    }.distinctUntilChanged()
 
     override fun showMessage(context: Activity, message: Message) {
         dataResolveScope.launch(Dispatchers.IO) {

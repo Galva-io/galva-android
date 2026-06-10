@@ -49,6 +49,10 @@ internal class FakeCatalogStore(
             it.products.find { it.product.sku == sku }
         }
     }
+
+    override suspend fun getProductWithOffers(sku: String): ProductCatalog? {
+        return _state.value.products.find { it.product.sku == sku }
+    }
     override suspend fun getProduct(sku: String): Product? =
         _state.value.products.firstOrNull { it.product.sku == sku }?.product
 

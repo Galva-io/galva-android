@@ -53,13 +53,31 @@ class SqliteCatalogStore(
             withContext(ioDispatcher) {
                 val product = getProduct(sku)
                 if (product != null) {
+                    println("Galva Product found for SKU $sku: ${product.title}")
                     val basePlans = loadBasePlansForProduct(helper.readableDatabase, sku)
+                    println("Galva Loaded ${basePlans.size} base plans for product SKU $sku")
                     ProductCatalog(product, basePlans)
                 } else {
+                    println("Galva No product found for SKU $sku")
                     null
                 }
             }
             }
+    }
+
+    override suspend fun getProductWithOffers(sku: String): ProductCatalog? {
+        return withContext(ioDispatcher) {
+            val product = getProduct(sku)
+            if (product != null) {
+                println("Galva Product found for SKU $sku: ${product.title}")
+                val basePlans = loadBasePlansForProduct(helper.readableDatabase, sku)
+                println("Galva Loaded ${basePlans.size} base plans for product SKU $sku")
+                ProductCatalog(product, basePlans)
+            } else {
+                println("Galva No product found for SKU $sku")
+                null
+            }
+        }
     }
 
     override suspend fun getProduct(sku: String): Product? = withContext(ioDispatcher) {

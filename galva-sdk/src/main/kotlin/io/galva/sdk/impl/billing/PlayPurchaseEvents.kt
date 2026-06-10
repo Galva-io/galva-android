@@ -14,6 +14,7 @@ class PlayPurchaseEvents: PurchasesUpdatedListener {
 
     override fun onPurchasesUpdated(result: BillingResult, purchases: MutableList<Purchase>?) {
         val event = Event(result, purchases)
+        println("Galva Emitting purchase event: ${event.result.responseCode} ${event.purchases?.firstOrNull()?.products?.firstOrNull()}")
         subscribers.forEach { it.trySend(event) }
     }
     /** Returns a channel that receives every purchase event. Caller closes on completion. */

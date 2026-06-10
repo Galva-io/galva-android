@@ -11,7 +11,8 @@ data class Identity @JvmOverloads constructor(
     val userId: String? = null,
     val email: String? = null,
     val properties: JsonObject = JsonObject(emptyMap()),
-    val firstCreated : Boolean
+    val firstCreated : Boolean,
+    val pushToken:String? = null
 ) {
     val isIdentified: Boolean get() = userId != null
     val isAnonymous: Boolean get() = !isIdentified

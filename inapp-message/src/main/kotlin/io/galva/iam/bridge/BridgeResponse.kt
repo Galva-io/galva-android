@@ -2,9 +2,17 @@ package io.galva.iam.bridge
 
 import android.annotation.SuppressLint
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 
 @SuppressLint("UnsafeOptInUsageError")
 @Serializable
 data class BridgeResponse(
-    private val requestId: String, private val result: String
+     val requestId: String,  val result: JsonElement
+)
+
+@SuppressLint("UnsafeOptInUsageError")
+@Serializable
+data class BridgeStringResponse(
+     val requestId: String,  val result: String
 )

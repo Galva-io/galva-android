@@ -5,12 +5,10 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 
 @Serializable
-@SerialName("Track")
+@SerialName("track")
 data class TrackMessage(
     val event: String,
     val timestamp: String,
-    @SerialName("type")
-    val type: String = "track",
     val anonymousId: String? = null,
     @SerialName("context")
     val context: MessageContext? = null,

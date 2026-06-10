@@ -4,12 +4,11 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
-@SerialName("CreateCommunicationEndpoint")
+@SerialName("create-communication-endpoint")
 data class CreateCommunicationEndpointMessage(
+    @SerialName("endpoint")
     val endpoint: EndpointNotification,
     val timestamp: String,
-    @SerialName("type")
-    val type: String = "create-communication-endpoint",
     val anonymousId: String? = null,
     @SerialName("context")
     val context: MessageContext? = null,

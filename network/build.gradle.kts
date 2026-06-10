@@ -13,7 +13,7 @@ dependencies {
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
     implementation(project(":common"))
     implementation(libs.core.ktx)
-    implementation(libs.mockwebserver)
+    testImplementation(libs.mockwebserver)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
 }

@@ -20,6 +20,9 @@ import io.galva.network.request.messages.Screen
 import io.galva.core.protocol.operation.APIOperation
 import io.galva.core.protocol.operation.AdvertingProvider
 import io.galva.core.protocol.operation.OperationRequestConverter
+import io.galva.network.request.messages.CreateCommunicationEndpointMessage
+import io.galva.network.request.messages.DeleteCommunicationEndpointMessage
+import io.galva.network.request.messages.EndpointNotification
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import java.util.Calendar
@@ -42,7 +45,8 @@ class DefaultOperationRequestConverter(
                                 $$"$gv_obfuscatedAccountId",
                                 JsonPrimitive(UUIDv7.randomUUID().toString())
                             )
-                        }))
+                        })
+                )
             }
 
             is APIOperation.Identify -> IdentityMessage(
@@ -63,7 +67,8 @@ class DefaultOperationRequestConverter(
                                 JsonPrimitive(operation.obfuscatedAccountId)
                             )
                         }
-                    }))
+                    })
+            )
 
 
             is APIOperation.IdentifyEmail -> IdentityMessage(
@@ -78,6 +83,28 @@ class DefaultOperationRequestConverter(
                     anonymousId = operation.anonymousId,
                     context = createMessageContext(context),
                     traits = operation.properties
+                )
+            }
+
+            is APIOperation.SetPushToken -> {
+                CreateCommunicationEndpointMessage(
+                    endpoint = EndpointNotification.PushNotification(
+                        token = operation.token,
+                    ),
+                    timestamp = DateTimeFormatUtils.format(Calendar.getInstance()),
+                    anonymousId = operation.anonymousId,
+                    context = createMessageContext(context),
+                )
+            }
+
+            is APIOperation.ClearPushToken -> {
+                DeleteCommunicationEndpointMessage(
+                    endpoint = EndpointNotification.PushNotification(
+                        token = operation.token,
+                    ),
+                    timestamp = DateTimeFormatUtils.format(Calendar.getInstance()),
+                    anonymousId = operation.anonymousId,
+                    context = createMessageContext(context),
                 )
             }
         }

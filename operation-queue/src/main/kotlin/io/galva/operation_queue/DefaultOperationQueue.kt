@@ -33,6 +33,9 @@ class DefaultOperationQueue(
     private val children = mutableListOf<Job>()
 
     override fun start() {
+        logger.info {
+            "starting operation queue, releasing locks and launching consumer job"
+        }
         if (consumerJob != null) return
         consumerJob = scope.launch {
             store.releaseAllLocks()
@@ -68,8 +71,12 @@ class DefaultOperationQueue(
     }
 
     override fun stop() {
+        logger.info {
+            "stopping operation queue, cancelling consumer job and children"
+        }
         consumerJob?.cancel()
         children.forEach { it.cancel() }
+        consumerJob = null
     }
 
     private suspend fun consumeLoop() {

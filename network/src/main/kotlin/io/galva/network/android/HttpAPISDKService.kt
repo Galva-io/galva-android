@@ -15,6 +15,7 @@ import io.galva.network.service.SdkService
 import io.galva.network.service.ServiceResult
 import io.galva.network.service.toServiceResult
 import io.galva.network.toUrl
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 class HttpAPISDKService(

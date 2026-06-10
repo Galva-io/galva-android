@@ -14,6 +14,7 @@ import io.galva.network.service.IdentifyService
 import io.galva.network.service.ServiceResult
 import io.galva.network.service.toServiceResult
 import io.galva.network.toUrl
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -121,7 +122,7 @@ class HttpAPIIdentifyService(
                 val jsonData =
                     json["data"]?.jsonObject ?: throw Exception("Missing data field in response")
                 val isValid = jsonData["valid"]?.jsonPrimitive?.booleanOrNull ?: false
-                val payload = jsonData["payload"]?.jsonObject.toString()
+                val payload = jsonData["payload"]?.jsonObject
                 val webviewVersion = jsonData["webviewVersion"]?.jsonPrimitive?.contentOrNull
                     ?: throw Exception("Missing webviewVersion field in response")
                 MessageResponse(request.messageId, payload, isValid, webviewVersion)
