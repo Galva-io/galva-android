@@ -12,6 +12,7 @@ import io.galva.billing.model.BillingLaunchState
 import io.galva.billing.model.Product
 import io.galva.billing.model.ProductType
 import io.galva.billing.store.CatalogStore
+import io.galva.billing.store.EntitlementStore
 import io.galva.common.logger.Logger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -30,6 +31,7 @@ class PlayBillingLauncher(
     private val catalogStore: CatalogStore,
     private val purchaseEvents: PlayPurchaseEvents,
     private val logger: Logger,
+    private val entitlementStore: EntitlementStore,
     private val purchaseTimeout: Duration = 5.minutes,
 
     ) : BillingLauncher {
@@ -96,10 +98,29 @@ class PlayBillingLauncher(
                 BillingFlowParams.ProductDetailsParams.newBuilder()
                     .setProductDetails(productDetails)
                     .setOfferToken(offerToken).build()
-
+            val currentEntitlement = entitlementStore.get()
             val flowParams =
                 BillingFlowParams.newBuilder().setProductDetailsParamsList(listOf(productParams))
-                    .apply { obfuscatedAccountId?.let { setObfuscatedAccountId(it) } }.build()
+                    .apply {
+                        if(productDetails.productType == BillingClient.ProductType.SUBS){
+                            if(currentEntitlement != null){
+                                val oldSubscription  =cache.get(currentEntitlement.productId)
+                                if(oldSubscription?.productType == BillingClient.ProductType.SUBS){
+                                    logger.debug { "Upgrading from ${currentEntitlement.productId} to $productId" }
+                                    setSubscriptionUpdateParams(
+                                        BillingFlowParams.SubscriptionUpdateParams.newBuilder()
+                                            .setOldPurchaseToken(currentEntitlement.purchaseToken)
+                                            .build()
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    .apply {
+                        if(currentEntitlement == null || productDetails.productType == BillingClient.ProductType.INAPP){
+                            obfuscatedAccountId?.let { setObfuscatedAccountId(it) }
+                        }
+                    }.build()
             val eventChannel = purchaseEvents.subscribe()
             try {
                 val launchResult = withContext(Dispatchers.Main.immediate) {

@@ -98,7 +98,7 @@ class DefaultOperationManager internal constructor(
             queueHandleScope: CoroutineScope,
             logger: Logger,
             batchPolicy: BatchPolicy,
-            lifecycleOwner: LifecycleOwner = ProcessLifecycleOwner.get()
+            lifecycleOwner: AppLifecycleObserver
         ): DefaultOperationManager {
             val helper = OperationsSqliteHelper(context)
             val operationStore = SqliteOperationStore(helper, logger)
@@ -126,9 +126,8 @@ class DefaultOperationManager internal constructor(
                 transitionTrigger = OfflineToOnlineTrigger(networkMonitor),
                 scope = queueHandleScope,
             )
-            val lifecycleObserver = AndroidAppLifecycleObserver(lifecycleOwner)
             return DefaultOperationManager(
-                lifecycleObserver, operationQueue, requestConverter,
+                lifecycleOwner, operationQueue, requestConverter,
                 queueHandleScope
             )
         }

@@ -1,6 +1,9 @@
+import java.io.FileInputStream
+import java.util.Properties
 plugins {
     alias(libs.plugins.android.application)
 }
+
 
 android {
     namespace = "io.galva.sample"
@@ -14,6 +17,18 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
+        buildFeatures {
+            buildConfig = true
+        }
+        val localProperties = Properties()
+        val localPropertiesFile = project.file("local.properties")
+        if (localPropertiesFile.exists()) {
+            localProperties.load(FileInputStream(localPropertiesFile))
+        }
+
+        // 2. Fetch the value safely (provide a fallback if missing)
+        val apiKey = localProperties.getProperty("GALVA_API_KEY") ?: throw IllegalArgumentException("GALVA_API_KEY not found, please add it to local.properties")
+        buildConfigField("String", "GALVA_API_KEY", "\"$apiKey\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -32,6 +47,7 @@ android {
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
+    implementation("com.android.billingclient:billing-ktx:8.0.0")
     implementation(libs.material)
-    implementation("io.galva.sdk:galva-sdk:1.0.0")
+    implementation(project(":galva-sdk"))
 }

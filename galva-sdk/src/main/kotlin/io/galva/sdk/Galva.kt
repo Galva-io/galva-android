@@ -2,11 +2,16 @@ package io.galva.sdk
 
 import android.app.Activity
 import android.content.Context
+import android.icu.util.Calendar
 import androidx.annotation.VisibleForTesting
 import io.galva.sdk.BuildConfig
 import io.galva.billing.BillingManager
+import io.galva.common.lifecycle.AppLifecycleObserver
+import io.galva.common.lifecycle.AppLifecycleState
 import io.galva.common.logger.LogLevel
 import io.galva.common.logger.Logger
+import io.galva.common.utils.DateTimeFormatUtils
+import io.galva.common.utils.NotificationUtils
 import io.galva.common.utils.PlayBillingVersion
 import io.galva.core.protocol.Configuration
 import io.galva.core.protocol.identity.ProfileProperty
@@ -28,8 +33,10 @@ import io.galva.operation_queue.policy.SizeOrTimeoutBatchPolicy
 import io.galva.sdk.impl.billing.DefaultBillingManager
 import io.galva.sdk.impl.billing.GalvaProductIdSource
 import io.galva.sdk.impl.identity.DefaultIdentityManager
+import io.galva.sdk.impl.inappmessage.AndroidAppLifecycleObserver
 import io.galva.sdk.impl.inappmessage.DefaultInAppMessagingManager
 import io.galva.sdk.impl.inappmessage.ScreenMessageOverlay
+import io.galva.sdk.impl.inappmessage.SdkNotificationHandler
 import io.galva.sdk.impl.operation.DefaultOperationManager
 import io.galva.sdk.impl.store.SdkInitializeConfigStore
 import kotlinx.coroutines.CoroutineScope
@@ -65,6 +72,9 @@ class Galva @VisibleForTesting internal constructor(
     @Volatile
     private var _billingManager: BillingManager? = null
 
+    @Volatile
+    private var _sdkNotificationHandler: SdkNotificationHandler? = null
+
     private val channel = Channel<GalvaEvent>(Channel.UNLIMITED)
 
     val isConfigured: Boolean get() = config != null
@@ -86,7 +96,12 @@ class Galva @VisibleForTesting internal constructor(
         get() = _billingManager
             ?: error("Galva not configured. Call Galva.instance.configure(...) first.")
 
-    private  fun startProcessingGalvaEvents(){
+
+    val sdkNotificationHandler: SdkNotificationHandler
+        get() = _sdkNotificationHandler
+            ?: error("Galva not configured. Call Galva.instance.configure(...) first.")
+
+    private fun startProcessingGalvaEvents() {
         galvaScope.launch(Dispatchers.IO) {
             for (event in channel) {
                 when (event) {
@@ -97,6 +112,10 @@ class Galva @VisibleForTesting internal constructor(
                     is GalvaEvent.SetPushToken -> setPushTokenInternal(event.token)
                     is GalvaEvent.ClearPushToken -> clearPushTokenInternal()
                     is GalvaEvent.UpdateProperties -> updatePropertiesInternal(event.properties)
+                    is GalvaEvent.TrackNotificationPresented -> trackNotificationPresentedInternal(
+                        event.message, event.timestamp
+                    )
+
                     GalvaEvent.Logout -> logoutInternal()
                 }
             }
@@ -121,6 +140,7 @@ class Galva @VisibleForTesting internal constructor(
                 "Detected Play Billing version ${PlayBillingVersion.current}, " + "but Galva SDK requires 8.0+. Add to your build.gradle.kts: " + "implementation(\"com.android.billingclient:billing-ktx:8.0.0\")"
             }
         }
+        _sdkNotificationHandler = SdkNotificationHandler(context)
         val keyValueStorage = KeyValueStorageFactory.create(context)
         identityManager = DefaultIdentityManager.create(keyValueStorage, logger)
         val httpClient = OkHttpClientBuilder().apiKey(configuration.apiKey)
@@ -149,20 +169,18 @@ class Galva @VisibleForTesting internal constructor(
         ).apply {
             initialize()
         }
+        val appLifecycle: AppLifecycleObserver = AndroidAppLifecycleObserver()
         _inAppMessageManager = DefaultInAppMessagingManager.create(
             logger = logger,
             identityService = identifyService,
             identityManager = identity,
             webViewBundleResolver = webViewBundleResolver,
             messageOverlay = ScreenMessageOverlay(),
-            billingManager = billingManager
+            billingManager = billingManager,
+            appLifecycle
         )
         _operationManager = DefaultOperationManager.create(
-            context,
-            identifyService,
-            galvaScope,
-            logger,
-            batchPolicy,
+            context, identifyService, galvaScope, logger, batchPolicy, appLifecycle
         )
         galvaScope.launch(Dispatchers.IO) {
             identity.initialize()
@@ -187,6 +205,11 @@ class Galva @VisibleForTesting internal constructor(
                     webViewBundleResolver.doDownload(webviewVersion)
                 }
             }?.awaitAll()
+        }
+        appLifecycle.observe { event ->
+            if (event == AppLifecycleState.BACKGROUND) {
+                updateProperties(ProfileProperty.LastActiveTime(System.currentTimeMillis()))
+            }
         }
         log(configuration.logLevel, "Galva configured (apiKey=${configuration.apiKey})")
     }
@@ -240,6 +263,7 @@ class Galva @VisibleForTesting internal constructor(
         )
     }
 
+
     fun clearPushToken() {
         channel.trySend(GalvaEvent.ClearPushToken)
     }
@@ -263,6 +287,17 @@ class Galva @VisibleForTesting internal constructor(
         operationManager.recordOperation(
             APIOperation.UpdateUserProperties(
                 identity.current.anonymousId, propertyObject
+            )
+        )
+    }
+
+    private suspend fun trackNotificationPresentedInternal(
+        message:Map<String, String>, timestamp: String
+    ) {
+        val communicationId = message["communicationId"] ?: return
+        operationManager.recordOperation(
+            APIOperation.TrackPushNotification(
+                communicationId, "communication_presented", timestamp
             )
         )
     }
@@ -307,6 +342,20 @@ class Galva @VisibleForTesting internal constructor(
         logger.setEnableLogging(enableLogging)
     }
 
+    fun isGalvaNotification(message: Map<String, String>) =
+        NotificationUtils.isCommunicationNotification(message)
+
+    fun handlePush(message: Map<String, String>) {
+        channel.trySend(
+            GalvaEvent.TrackNotificationPresented(
+                message, DateTimeFormatUtils.format(
+                    java.util.Calendar.getInstance()
+                )
+            )
+        )
+        sdkNotificationHandler.handleNotification(message)
+    }
+
 
     private fun log(level: LogLevel, message: String) {
         when (level) {
@@ -345,6 +394,10 @@ class Galva @VisibleForTesting internal constructor(
         data class SetPushToken(val token: String) : GalvaEvent()
         data object ClearPushToken : GalvaEvent()
         data class UpdateProperties(val properties: List<ProfileProperty>) : GalvaEvent()
+
+        data class TrackNotificationPresented(val message: Map<String, String>, val timestamp: String) :
+            GalvaEvent()
+
         object Logout : GalvaEvent()
     }
 }

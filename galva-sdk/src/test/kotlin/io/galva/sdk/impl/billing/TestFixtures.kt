@@ -37,6 +37,8 @@ internal fun phase(
     id: String,
     offerToken: String,
     sequence: Int,
+    productId:String = "p",
+    basePlanId:String  = "bp",
     priceMicros: Long = 9_990_000L,
     priceFormatted: String = "$9.99",
     currencyCode: String = "USD",
@@ -44,7 +46,7 @@ internal fun phase(
     billingCycleCount: Int = 0,
     recurrenceMode: RecurrenceMode = RecurrenceMode.INFINITE_RECURRING,
 ) = PricingPhase(
-    id = id, offerToken = offerToken, sequence = sequence,
+    id = id, offerToken = offerToken,productId = productId, basePlanId = basePlanId, sequence = sequence,
     priceMicros = priceMicros, priceFormatted = priceFormatted,
     currencyCode = currencyCode, billingPeriod = billingPeriod,
     billingCycleCount = billingCycleCount, recurrenceMode = recurrenceMode,
@@ -65,7 +67,7 @@ internal fun simpleCatalog(
                     offers = listOf(
                         OfferWithPhasesModel(
                             offer = offer(offerToken, basePlanId, offerId),
-                            pricingPhases = listOf(phase("${offerToken}_0", offerToken, 0)),
+                            pricingPhases = listOf(phase("${offerToken}_0", offerToken, 0, productId = productSku,basePlanId = basePlanId)),
                         ),
                     ),
                 ),

@@ -4,6 +4,9 @@ import com.android.billingclient.api.BillingClient
 import com.android.billingclient.api.ProductDetails
 import com.android.billingclient.api.QueryProductDetailsParams
 import io.galva.common.logger.Logger
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
@@ -24,7 +27,7 @@ class PlayProductDetailsResolver(
     }
 
     private suspend fun query(productIds: List<String>, type: String): List<ProductDetails> =
-        suspendCancellableCoroutine { cont ->
+        callbackFlow {
             val params = QueryProductDetailsParams.newBuilder()
                 .setProductList(
                     productIds.map { id ->
@@ -38,11 +41,12 @@ class PlayProductDetailsResolver(
 
             billingClient.queryProductDetailsAsync(params) { result, details ->
                 if (result.responseCode == BillingClient.BillingResponseCode.OK) {
-                    cont.resume(details.productDetailsList)
+                    trySend(details.productDetailsList)
                 } else {
                     logger.warn { "queryProductDetailsAsync($type) failed: ${result.responseCode}" }
-                    cont.resume(emptyList())
+                    trySend(emptyList())
                 }
             }
-        }
+            awaitClose()
+        }.firstOrNull() ?: emptyList()
 }

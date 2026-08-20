@@ -3,6 +3,7 @@ package io.galva.billing.local
 import android.content.ContentValues
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
+import android.util.Log
 import io.galva.billing.model.BasePlan
 import io.galva.billing.model.BasePlanWithOffersModel
 import io.galva.billing.model.FullCatalog
@@ -168,7 +169,7 @@ class SqliteCatalogStore(
         ).use { cursor ->
             while (cursor.moveToNext()) {
                 val offer = readOffer(cursor)
-                val phases = loadPhasesForOffer(db, offer.offerToken)
+                val phases = loadPhasesForOffer(db, productSku,basePlanId,offer.offerToken)
                 offers.add(OfferWithPhasesModel(offer, phases))
             }
         }
@@ -176,27 +177,29 @@ class SqliteCatalogStore(
         return offers
     }
 
-    private fun loadPhasesForOffer(db: SQLiteDatabase, offerToken: String): List<PricingPhase> {
+    private fun loadPhasesForOffer(db: SQLiteDatabase,productId:String,basePlanId: String, offerToken: String): List<PricingPhase> {
         val phases = mutableListOf<PricingPhase>()
 
         db.rawQuery(
-            """SELECT id, offer_token, sequence, price_micros, price_formatted,
+            """SELECT id, offer_token,base_plan_id,product_sku, sequence, price_micros, price_formatted,
                       currency_code, billing_period, billing_cycle_count, recurrence_mode
-               FROM pricing_phases WHERE offer_token = ? ORDER BY sequence ASC""",
-            arrayOf(offerToken),
+               FROM pricing_phases WHERE offer_token = ? and product_sku = ? and base_plan_id = ?  ORDER BY sequence ASC""",
+            arrayOf(offerToken,productId,basePlanId),
         ).use { cursor ->
             while (cursor.moveToNext()) {
                 phases.add(
                     PricingPhase(
                         id = cursor.getString(0),
                         offerToken = cursor.getString(1),
-                        sequence = cursor.getInt(2),
-                        priceMicros = cursor.getLong(3),
-                        priceFormatted = cursor.getString(4),
-                        currencyCode = cursor.getString(5),
-                        billingPeriod = cursor.getString(6),
-                        billingCycleCount = cursor.getInt(7),
-                        recurrenceMode = RecurrenceMode.valueOf(cursor.getString(8)),
+                        basePlanId = cursor.getString(2),
+                        productId = cursor.getString(3),
+                        sequence = cursor.getInt(4),
+                        priceMicros = cursor.getLong(5),
+                        priceFormatted = cursor.getString(6),
+                        currencyCode = cursor.getString(7),
+                        billingPeriod = cursor.getString(8),
+                        billingCycleCount = cursor.getInt(9),
+                        recurrenceMode = RecurrenceMode.valueOf(cursor.getString(10)),
                     )
                 )
             }
@@ -242,7 +245,8 @@ class SqliteCatalogStore(
                     bp.offers.forEach { offer ->
                         insertOffer(db, offer.offer, productSku = productCatalog.product.sku)
                         offer.pricingPhases.forEach { phase ->
-                            insertPhase(db, phase)
+                            Log.e("GalvaBilling", "Inserting phase ${phase.id} for offer ${offer.offer.offerToken} and product ${productCatalog.product.sku}")
+                            insertPhase(db,bp.basePlan.productSku,offer, phase)
                         }
                     }
                 }
@@ -299,10 +303,12 @@ class SqliteCatalogStore(
         db.insertWithOnConflict("offers", null, values, SQLiteDatabase.CONFLICT_REPLACE)
     }
 
-    private fun insertPhase(db: SQLiteDatabase, phase: PricingPhase) {
+    private fun insertPhase(db: SQLiteDatabase, productId:String,offer: OfferWithPhasesModel, phase: PricingPhase) {
         val values = ContentValues().apply {
             put("id", phase.id)
             put("offer_token", phase.offerToken)
+            put("base_plan_id",offer.offer.basePlanId)
+            put("product_sku",productId)
             put("sequence", phase.sequence)
             put("price_micros", phase.priceMicros)
             put("price_formatted", phase.priceFormatted)

@@ -23,6 +23,8 @@ import io.galva.core.protocol.operation.OperationRequestConverter
 import io.galva.network.request.messages.CreateCommunicationEndpointMessage
 import io.galva.network.request.messages.DeleteCommunicationEndpointMessage
 import io.galva.network.request.messages.EndpointNotification
+import io.galva.network.request.messages.EndpointNotification.*
+import io.galva.network.request.messages.TrackPushNotificationMessage
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import java.util.Calendar
@@ -33,78 +35,107 @@ class DefaultOperationRequestConverter(
     private val context: Context, private val advertingProvider: AdvertingProvider
 ) : OperationRequestConverter {
     override fun operationToBatchMessage(operation: APIOperation): BatchMessage {
+        val messageContext = createMessageContext(context)
         return when (operation) {
             is APIOperation.CreateAnonymousId -> {
                 IdentityMessage(
                     timestamp = DateTimeFormatUtils.format(Calendar.getInstance()),
                     anonymousId = operation.anonymousId,
-                    context = createMessageContext(context),
+                    context = messageContext,
                     traits = JsonObject(
                         buildMap {
                             put(
                                 $$"$gv_obfuscatedAccountId",
                                 JsonPrimitive(UUIDv7.randomUUID().toString())
                             )
+                            put(
+                                $$"$gv_timezone",
+                                JsonPrimitive(messageContext.timezone)
+                            )
+                            put(
+                                $$"$gv_languageCode",
+                                JsonPrimitive(DeviceUtils.getDetectedLanguage(context, Locale.getDefault().toLanguageTag()))
+                            )
+                            put(
+                                $$"$gv_country",
+                                JsonPrimitive(DeviceUtils.getDetectedCountry(context,Locale.getDefault().country))
+                            )
                         })
                 )
             }
 
-            is APIOperation.Identify -> IdentityMessage(
-                timestamp = DateTimeFormatUtils.format(
-                    Calendar.getInstance()
-                ),
-                anonymousId = operation.anonymousId,
-                context = createMessageContext(context),
-                endUserId = operation.userId,
-                traits = JsonObject(
-                    buildMap {
-                        if (operation.email != null) {
-                            put("email", JsonPrimitive(operation.email))
-                        }
-                        if (operation.obfuscatedAccountId != null) {
+            is APIOperation.Identify -> {
+
+                IdentityMessage(
+                    timestamp = DateTimeFormatUtils.format(
+                        Calendar.getInstance()
+                    ),
+                    anonymousId = operation.anonymousId,
+                    context = messageContext,
+                    endUserId = operation.userId,
+                    traits = JsonObject(
+                        buildMap {
+                            if (operation.email != null) {
+                                put($$"$gv_email", JsonPrimitive(operation.email))
+                            }
+                            if (operation.obfuscatedAccountId != null) {
+                                put(
+                                    $$"$gv_obfuscatedAccountId",
+                                    JsonPrimitive(operation.obfuscatedAccountId)
+                                )
+                            }
                             put(
-                                $$"$gv_obfuscatedAccountId",
-                                JsonPrimitive(operation.obfuscatedAccountId)
+                                $$"$gv_timezone",
+                                JsonPrimitive(messageContext.timezone)
                             )
-                        }
-                    })
-            )
-
-
-            is APIOperation.IdentifyEmail -> IdentityMessage(
-                timestamp = DateTimeFormatUtils.format(Calendar.getInstance()),
-                anonymousId = operation.anonymousId,
-                context = createMessageContext(context)
-            )
+                            put(
+                                $$"$gv_languageCode",
+                                JsonPrimitive(messageContext.locale)
+                            )
+                            put(
+                                $$"$gv_country",
+                                JsonPrimitive(DeviceUtils.getDetectedCountry(context,Locale.getDefault().country))
+                            )
+                        })
+                )
+            }
 
             is APIOperation.UpdateUserProperties -> {
                 IdentityMessage(
                     timestamp = DateTimeFormatUtils.format(Calendar.getInstance()),
                     anonymousId = operation.anonymousId,
-                    context = createMessageContext(context),
+                    context = messageContext,
                     traits = operation.properties
                 )
             }
 
             is APIOperation.SetPushToken -> {
                 CreateCommunicationEndpointMessage(
-                    endpoint = EndpointNotification.PushNotification(
+                    endpoint = PushNotification(
                         token = operation.token,
                     ),
                     timestamp = DateTimeFormatUtils.format(Calendar.getInstance()),
                     anonymousId = operation.anonymousId,
-                    context = createMessageContext(context),
+                    context = messageContext,
                 )
             }
 
             is APIOperation.ClearPushToken -> {
                 DeleteCommunicationEndpointMessage(
-                    endpoint = EndpointNotification.PushNotification(
+                    endpoint = PushNotification(
                         token = operation.token,
                     ),
                     timestamp = DateTimeFormatUtils.format(Calendar.getInstance()),
                     anonymousId = operation.anonymousId,
-                    context = createMessageContext(context),
+                    context = messageContext,
+                )
+            }
+            is APIOperation.TrackPushNotification ->{
+                TrackPushNotificationMessage(
+                    timestamp = DateTimeFormatUtils.format(Calendar.getInstance()),
+                    context = messageContext,
+                    event = operation.eventType,
+                    communicationId = operation.communicationId
                 )
             }
         }

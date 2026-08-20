@@ -4,7 +4,9 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class PricingPhase(
     val id: String,
-    val offerToken: String,                   // FK → Offer.offerToken
+    val offerToken: String,
+    val basePlanId:String,
+    val productId:String,// FK → Offer.offerToken
     val sequence: Int,
     val priceMicros: Long,
     val priceFormatted: String,

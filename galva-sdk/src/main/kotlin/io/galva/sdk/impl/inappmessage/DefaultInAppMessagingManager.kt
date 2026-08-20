@@ -174,11 +174,10 @@ class DefaultInAppMessagingManager private constructor(
             webViewBundleResolver: WebViewBundleResolver,
             messageOverlay: MessageOverlay,
             billingManager: BillingManager,
-            lifecycleOwner: LifecycleOwner = ProcessLifecycleOwner.get()
+            appLifecycleObserver: AppLifecycleObserver
         ): DefaultInAppMessagingManager {
-            val lifecycleObserver = AndroidAppLifecycleObserver(lifecycleOwner)
             return DefaultInAppMessagingManager(
-                lifecycleObserver = lifecycleObserver,
+                lifecycleObserver = appLifecycleObserver,
                 logger = logger,
                 identityService = identityService,
                 messageOverlay = messageOverlay,

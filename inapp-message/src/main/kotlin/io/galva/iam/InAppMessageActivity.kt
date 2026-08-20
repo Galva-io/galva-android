@@ -9,6 +9,7 @@ import android.webkit.WebView
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.enableEdgeToEdge
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
@@ -34,10 +35,10 @@ abstract class InAppMessageActivity : ComponentActivity(), JSBridgeCallback {
     abstract fun getHtmlFilePath(): String
 
 
-    private lateinit var root: FrameLayout
     private lateinit var webView: WebView
     override fun onCreate(savedInstanceState: Bundle?) {
         //   enableEdgeToEdge()
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         actionBar?.hide()
         createViews()
@@ -45,11 +46,7 @@ abstract class InAppMessageActivity : ComponentActivity(), JSBridgeCallback {
     }
 
     private fun createViews() {
-        root = FrameLayout(this).apply {
-            layoutParams = ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-            )
-        }
+
         val htmlFileUrl = getHtmlFilePath()
         webView = WebView(this).apply {
             layoutParams = FrameLayout.LayoutParams(
@@ -73,12 +70,14 @@ abstract class InAppMessageActivity : ComponentActivity(), JSBridgeCallback {
 
             loadUrl("file:///$htmlFileUrl")
         }
+//        root.addView(webView)
         setContentView(webView)
-        ViewCompat.setOnApplyWindowInsetsListener(webView) { view, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
-            insets
-        }
+//        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+//            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+//            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+////            insets
+//            WindowInsetsCompat.CONSUMED
+//        }
     }
 
     private fun configureBackPress() {

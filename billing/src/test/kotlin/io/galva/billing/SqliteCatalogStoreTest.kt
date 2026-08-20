@@ -563,6 +563,8 @@ class SqliteCatalogStoreTest {
         val customPhase = PricingPhase(
             id = "ph_custom",
             offerToken = "t",
+            productId = "p",
+            basePlanId = "bp",
             sequence = 0,
             priceMicros = 4_990_000L,
             priceFormatted = "$4.99",
