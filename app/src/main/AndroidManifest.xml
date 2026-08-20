@@ -16,6 +16,8 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.SmartTime">
+        <meta-data android:name="io.galva.sdk.default_notification_color" android:resource="@android:color/holo_red_dark"/>
+        <meta-data android:name="io.galva.sdk.default_notification_icon" android:resource="@drawable/outline_ac_unit_24"/>
         <activity
             android:name=".MainActivity"
             android:exported="true">

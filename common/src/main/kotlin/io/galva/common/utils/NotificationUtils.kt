@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Build
+import android.util.Log
 
 
 object NotificationUtils {
@@ -30,8 +31,15 @@ object NotificationUtils {
         )
 
         val metaData = applicationInfo.metaData
+        Log.e("NotificationUtils", "MetaData: $metaData")
         val icon = metaData.getInt(META_DEFAULT_ICON, applicationInfo.icon)
-        val color = metaData.getInt(META_DEFAULT_COLOR, Color.BLUE)
+        Log.e("NotificationUtils", "Default icon: $icon applicationInfo.icon ${applicationInfo.icon}")
+        val colorResId  = metaData.getInt(META_DEFAULT_COLOR, 0)
+        val color = if(colorResId != 0){
+            context.getColor(colorResId)
+        }else{
+            null
+        }
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(context, notificationChannel)
         } else {
@@ -49,7 +57,11 @@ object NotificationUtils {
             closeIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        builder.setSmallIcon(icon).setColor(color).setContentTitle(title).setContentText(message)
+        builder.setSmallIcon(icon).apply {
+            if(color != null){
+                setColor(color)
+            }
+        }.setContentTitle(title).setContentText(message)
             .setStyle(Notification.BigTextStyle().bigText(message)).setAutoCancel(true)
             .setContentIntent(openIntent)
             .setDeleteIntent(closePendingIntent)
