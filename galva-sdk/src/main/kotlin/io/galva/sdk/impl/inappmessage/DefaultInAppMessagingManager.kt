@@ -1,9 +1,7 @@
 package io.galva.sdk.impl.inappmessage
 
 import android.app.Activity
-
-import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.ProcessLifecycleOwner
+import android.content.Context
 import io.galva.billing.BillingManager
 import io.galva.common.lifecycle.AppLifecycleObserver
 import io.galva.common.lifecycle.AppLifecycleState
@@ -22,14 +20,18 @@ import io.galva.network.response.CommunicationResponse
 import io.galva.network.response.MessageResponse
 import io.galva.network.service.IdentifyService
 import io.galva.network.service.ServiceResult
-import io.galva.sdk.iam.BuildConfig
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flow
@@ -38,6 +40,7 @@ import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
@@ -53,6 +56,14 @@ class DefaultInAppMessagingManager private constructor(
     private val bundleResolver: WebViewBundleResolver,
     private val dataResolveScope: CoroutineScope,
 ) : InAppMessagingManager {
+    private val activeFetchJobsLock = Any()
+    private val activeFetchJobs = mutableSetOf<Job>()
+    private val resumeFetchEvents = MutableSharedFlow<Unit>(
+        replay = 0,
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
     private fun foregroundTrigger(): Flow<Unit> = callbackFlow {
         val subscriptionDeferred = async(Dispatchers.Main.immediate) {
             lifecycleObserver.observe(onEvent = {
@@ -82,11 +93,16 @@ class DefaultInAppMessagingManager private constructor(
             emit(Unit)
         },
         pollTrigger(),
+        resumeFetchEvents,
     ).mapNotNull {
         fetchMessage()
     }.distinctUntilChanged()
 
     override fun showMessage(context: Activity, message: Message) {
+        showMessage(context as Context, message)
+    }
+
+    override fun showMessage(context: Context, message: Message) {
         dataResolveScope.launch(Dispatchers.IO) {
             val anonymousId = identityManager.anonymousId
             val countryCode = billingManager.getStorefrontCountryCode() ?: context.resources.configuration.locales[0].country
@@ -118,7 +134,42 @@ class DefaultInAppMessagingManager private constructor(
 
     }
 
-    private suspend fun fetchMessage(): Message? {
+    override fun cancelFetchMessage() {
+        val jobs = synchronized(activeFetchJobsLock) {
+            activeFetchJobs.toList()
+        }
+        jobs.forEach { job ->
+            job.cancel(CancellationException("Cancelled to handle a deeplink"))
+        }
+    }
+
+    override fun resumeFetchMessage() {
+        resumeFetchEvents.tryEmit(Unit)
+    }
+
+    private suspend fun fetchMessage(): Message? = supervisorScope {
+        val fetchJob = async(start = CoroutineStart.LAZY) {
+            fetchMessageData()
+        }
+        synchronized(activeFetchJobsLock) {
+            activeFetchJobs.add(fetchJob)
+        }
+
+        try {
+            fetchJob.start()
+            fetchJob.await()
+        } catch (error: CancellationException) {
+            if (!currentCoroutineContext().isActive) throw error
+            logger.debug { "In-app message fetch cancelled" }
+            null
+        } finally {
+            synchronized(activeFetchJobsLock) {
+                activeFetchJobs.remove(fetchJob)
+            }
+        }
+    }
+
+    private suspend fun fetchMessageData(): Message? {
         // suspend until we have an anonymousId, which is required for the list communication request
         identityManager.awaitInitialized()
         var cursor: String? = null

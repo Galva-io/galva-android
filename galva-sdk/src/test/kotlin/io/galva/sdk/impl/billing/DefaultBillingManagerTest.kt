@@ -18,6 +18,7 @@ import junit.framework.TestCase.assertTrue
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
@@ -69,7 +70,12 @@ class DefaultBillingManagerTest {
         connection = connection,
         productIdSource = idSource,
         resolver = resolver,
+        purchaseResolver = object : PurchaseResolver {
+            override fun loadPurchases() = emptyFlow<PlayPurchaseEvents.Event>()
+        },
         mapper = mapper,
+        purchaseMapper = mock(),
+        entitlementStore = mock(),
         catalogStore = catalogStore,
         productDetailsCache = productDetailsCache,
         launcher = launcher,

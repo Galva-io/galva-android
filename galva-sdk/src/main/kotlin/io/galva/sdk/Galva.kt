@@ -3,6 +3,7 @@ package io.galva.sdk
 import android.app.Activity
 import android.content.Context
 import android.icu.util.Calendar
+import android.net.Uri
 import androidx.annotation.VisibleForTesting
 import io.galva.sdk.BuildConfig
 import io.galva.billing.BillingManager
@@ -32,6 +33,9 @@ import io.galva.network.request.sdk.InitConfigSdkRequest
 import io.galva.operation_queue.policy.SizeOrTimeoutBatchPolicy
 import io.galva.sdk.impl.billing.DefaultBillingManager
 import io.galva.sdk.impl.billing.GalvaProductIdSource
+import io.galva.sdk.impl.deeplink.DeeplinkOpenCommunicationRouterHandler
+import io.galva.sdk.impl.deeplink.DeeplinkRouter
+import io.galva.sdk.impl.deeplink.LocalPendingDeeplinkStore
 import io.galva.sdk.impl.identity.DefaultIdentityManager
 import io.galva.sdk.impl.inappmessage.AndroidAppLifecycleObserver
 import io.galva.sdk.impl.inappmessage.DefaultInAppMessagingManager
@@ -75,6 +79,9 @@ class Galva @VisibleForTesting internal constructor(
     @Volatile
     private var _sdkNotificationHandler: SdkNotificationHandler? = null
 
+    @Volatile
+    private var _deeplinkRouter: DeeplinkRouter? = null
+
     private val channel = Channel<GalvaEvent>(Channel.UNLIMITED)
 
     val isConfigured: Boolean get() = config != null
@@ -101,6 +108,10 @@ class Galva @VisibleForTesting internal constructor(
         get() = _sdkNotificationHandler
             ?: error("Galva not configured. Call Galva.instance.configure(...) first.")
 
+    private val deeplinkRouter: DeeplinkRouter
+        get() = _deeplinkRouter
+            ?: error("Galva not configured. Call Galva.instance.configure(...) first.")
+
     private fun startProcessingGalvaEvents() {
         galvaScope.launch(Dispatchers.IO) {
             for (event in channel) {
@@ -115,6 +126,9 @@ class Galva @VisibleForTesting internal constructor(
                     is GalvaEvent.TrackNotificationPresented -> trackNotificationPresentedInternal(
                         event.message, event.timestamp
                     )
+
+                    is GalvaEvent.HandleOpenURL -> deeplinkRouter.handle(event.uri)
+                    GalvaEvent.ProcessPendingDeeplink -> deeplinkRouter.handlePending()
 
                     GalvaEvent.Logout -> logoutInternal()
                 }
@@ -170,7 +184,7 @@ class Galva @VisibleForTesting internal constructor(
             initialize()
         }
         val appLifecycle: AppLifecycleObserver = AndroidAppLifecycleObserver()
-        _inAppMessageManager = DefaultInAppMessagingManager.create(
+        val inAppMessagingManager = DefaultInAppMessagingManager.create(
             logger = logger,
             identityService = identifyService,
             identityManager = identity,
@@ -179,19 +193,22 @@ class Galva @VisibleForTesting internal constructor(
             billingManager = billingManager,
             appLifecycle
         )
+        _inAppMessageManager = inAppMessagingManager
+        _deeplinkRouter = DeeplinkRouter(
+            handlers = listOf(
+                DeeplinkOpenCommunicationRouterHandler(
+                    context = context.applicationContext,
+                    identityManager = identity,
+                    inAppMessagingManager = inAppMessagingManager,
+                )
+            ),
+            pendingDeeplinkStore = LocalPendingDeeplinkStore(keyValueStorage),
+        )
         _operationManager = DefaultOperationManager.create(
             context, identifyService, galvaScope, logger, batchPolicy, appLifecycle
         )
         galvaScope.launch(Dispatchers.IO) {
             identity.initialize()
-            val config = configStore.loadAndSaveConfig()
-            billingManager.loadProducts()
-            val maxBatchSize = max(config?.data?.batchCollection?.flushSize ?: 10, 10)
-            val maxBatchWaitingTime = maxOf(
-                config?.data?.batchCollection?.flushIntervalMs?.milliseconds ?: 10_000.milliseconds,
-                10.seconds
-            )
-            batchPolicy.update(maxBatchSize, maxBatchWaitingTime)
             if (identity.current.firstCreated) {
                 operationManager.recordOperation(
                     APIOperation.CreateAnonymousId(
@@ -200,6 +217,16 @@ class Galva @VisibleForTesting internal constructor(
                 )
             }
             startProcessingGalvaEvents()
+            channel.trySend(GalvaEvent.ProcessPendingDeeplink)
+
+            val config = configStore.loadAndSaveConfig()
+            billingManager.loadProducts()
+            val maxBatchSize = max(config?.data?.batchCollection?.flushSize ?: 10, 10)
+            val maxBatchWaitingTime = maxOf(
+                config?.data?.batchCollection?.flushIntervalMs?.milliseconds ?: 10_000.milliseconds,
+                10.seconds
+            )
+            batchPolicy.update(maxBatchSize, maxBatchWaitingTime)
             config?.data?.webviewVersions?.map { webviewVersion ->
                 async(Dispatchers.IO) {
                     webViewBundleResolver.doDownload(webviewVersion)
@@ -230,6 +257,7 @@ class Galva @VisibleForTesting internal constructor(
                 email = email
             )
         )
+        deeplinkRouter.handlePending()
     }
 
     fun setPushToken(token: String) {
@@ -325,6 +353,11 @@ class Galva @VisibleForTesting internal constructor(
         inAppMessageManager.showMessage(activity, message)
     }
 
+    /** Queues a Galva deeplink for routing after SDK initialization. */
+    fun handleOpenURL(uri: Uri) {
+        channel.trySend(GalvaEvent.HandleOpenURL(uri))
+    }
+
     val currentUserId: String
         get() = identity.current.userId ?: identity.current.anonymousId
 
@@ -397,6 +430,10 @@ class Galva @VisibleForTesting internal constructor(
 
         data class TrackNotificationPresented(val message: Map<String, String>, val timestamp: String) :
             GalvaEvent()
+
+        data class HandleOpenURL(val uri: Uri) : GalvaEvent()
+
+        data object ProcessPendingDeeplink : GalvaEvent()
 
         object Logout : GalvaEvent()
     }

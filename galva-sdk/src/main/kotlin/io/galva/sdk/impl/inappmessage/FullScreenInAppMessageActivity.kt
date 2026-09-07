@@ -117,13 +117,10 @@ class FullScreenInAppMessageActivity : InAppMessageActivity() {
                 offerId
             )
                 .collectLatest { state ->
-                    println("Billing flow state at activity: $state")
                     withContext(Dispatchers.Main.immediate) {
-                        println("Billing flow state at activity: $state verify: ${isDestroyed.not() && isFinishing.not()}")
                         if (isDestroyed.not() && isFinishing.not()) {
                             val result: JsonObject? = when (state) {
                                 is BillingLaunchState.Cancelled -> {
-                                    println("Purchase cancelled: $state")
                                     JsonObject(
                                         mapOf(
                                             "outcome" to JsonPrimitive("cancelled"),
@@ -158,7 +155,6 @@ class FullScreenInAppMessageActivity : InAppMessageActivity() {
                                 }
 
                                 is BillingLaunchState.Failed -> {
-                                    println("Purchase failed: responseCode:${state.responseCode} reason:${state.reason}")
                                     JsonObject(
                                         mapOf(
                                             "outcome" to JsonPrimitive("cancelled"),
@@ -194,7 +190,6 @@ class FullScreenInAppMessageActivity : InAppMessageActivity() {
         super.onGetProductPrice(requestId, productId, basePlanId, offerId)
         viewModel.viewModelScope.launch(Dispatchers.IO) {
             val productPrice = viewModel.getProductPrice(productId, basePlanId, offerId)
-            println("Galva - Product price fetched: $productPrice for productId: $productId, basePlanId: $basePlanId, offerId: $offerId")
             val jsonPayload = JsonUtils.defaultJson.encodeToJsonElement(productPrice)
             withContext(Dispatchers.Main) {
                 if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {

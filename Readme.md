@@ -112,7 +112,42 @@ class MainActivity : AppCompatActivity() {
     }
 }
 ```
-### 4. Enable FCM push notifications
+### 4. Handle deep links
+
+Declare an exact app scheme beginning with `gv` in the activity that receives deep links:
+
+```xml
+<intent-filter>
+    <action android:name="android.intent.action.VIEW" />
+    <category android:name="android.intent.category.DEFAULT" />
+    <category android:name="android.intent.category.BROWSABLE" />
+    <data android:scheme="gv-my-app" />
+</intent-filter>
+```
+
+Forward both the initial intent and any new intent to Galva:
+
+```kotlin
+override fun onCreate(savedInstanceState: Bundle?) {
+    super.onCreate(savedInstanceState)
+    intent.data?.let(Galva.instance::handleOpenURL)
+}
+
+override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    intent.data?.let(Galva.instance::handleOpenURL)
+}
+```
+
+The currently supported route is:
+
+```text
+gv-my-app://openCommunication?communicationId=<communication-id>
+```
+
+If the user is anonymous, Galva retains only the latest link and opens it after `identify()`.
+
+### 5. Enable FCM push notifications
 ```kotlin
 class MyFirebaseService : FirebaseMessagingService() {
     override fun onNewToken(token: String) {
@@ -165,6 +200,7 @@ val obfuscatedAccountId: String?  // for Play Billing integration
 ```kotlin
 fun getInAppMessage(): Flow<Message>
 fun showMessage(activity: Activity, message: Message)
+fun handleOpenURL(uri: Uri)
 ```
 
 #### Billing
