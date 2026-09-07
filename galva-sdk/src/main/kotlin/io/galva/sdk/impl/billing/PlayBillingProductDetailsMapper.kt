@@ -1,6 +1,5 @@
 package io.galva.sdk.impl.billing
 
-import android.util.Log
 import com.android.billingclient.api.ProductDetails
 import io.galva.billing.model.BasePlan
 import io.galva.billing.model.BasePlanWithOffersModel
@@ -47,7 +46,6 @@ class PlayBillingProductDetailsMapper :ProductDetailsMapper{
                 BasePlanWithOffersModel(
                     basePlan = BasePlan(id = basePlanId, productSku = pd.productId),
                     offers = offerDetailsList.map { od ->
-                        Log.e("GalvaBilling","Mapping offer ${od.offerToken} for product ${pd.productId} with base plan $basePlanId")
                         OfferWithPhasesModel(
                             offer = Offer(
                                 offerToken = od.offerToken,
@@ -57,7 +55,6 @@ class PlayBillingProductDetailsMapper :ProductDetailsMapper{
                             ),
                             pricingPhases = od.pricingPhases.pricingPhaseList
                                 .mapIndexed { index, phase ->
-                                    Log.e("GalvaBilling","Mapping pricing phase $index for plan: $basePlanId  offer ${od.offerToken} with price ${phase.formattedPrice} and recurrence mode ${phase.recurrenceMode}")
                                     PricingPhase(
                                         id = "${od.offerToken}_${pd.productId}_${basePlanId}_$index",
                                         offerToken = od.offerToken,

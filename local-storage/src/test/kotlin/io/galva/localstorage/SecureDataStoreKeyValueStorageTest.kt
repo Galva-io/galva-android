@@ -1,8 +1,5 @@
 package io.galva.localstorage
 
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.test.core.app.ApplicationProvider
 import app.cash.turbine.test
 import io.galva.localstorage.core.KeyValueStorage
