@@ -2,8 +2,9 @@
 # Galva Android SDK — Consumer ProGuard Rules
 # ============================================================================
 # Bundled into the AAR via consumerProguardFiles. Auto-applied to consumer apps.
-# Module namespaces: io.galva.common, io.galva.identity, io.galva.operation,
-#                    io.galva.network, io.galva.iam, io.galva.billing, io.galva.sdk
+# Module namespaces: io.galva.common, io.galva.core, io.galva.identity,
+#                    io.galva.localstorage, io.galva.operation_queue, io.galva.network,
+#                    io.galva.iam, io.galva.billing, io.galva.sdk
 # ============================================================================
 
 # ============================================================================
@@ -65,9 +66,15 @@
 -keep public interface io.galva.identity.** { *; }
 -keep public enum io.galva.identity.** { *; }
 
--keep public class io.galva.operation.** { *; }
--keep public interface io.galva.operation.** { *; }
--keep public enum io.galva.operation.** { *; }
+-keep public class io.galva.operation_queue.** { *; }
+-keep public interface io.galva.operation_queue.** { *; }
+-keep public enum io.galva.operation_queue.** { *; }
+
+-keep public class io.galva.core.** { *; }
+-keep public interface io.galva.core.** { *; }
+
+-keep public class io.galva.localstorage.** { *; }
+-keep public interface io.galva.localstorage.** { *; }
 
 -keep public class io.galva.network.request.** { *; }
 -keep public class io.galva.network.response.** { *; }
@@ -91,3 +98,10 @@
 # Identity module
 -keep public interface io.galva.identity.IdentityManager { *; }
 -keep public class io.galva.core.protocol.identity.ProfileProperty { *; }
+
+# ============================================================================
+# WEBVIEW BRIDGE — in-app message bundles call these methods by name from JS
+# ============================================================================
+-keepclassmembers class io.galva.iam.bridge.JSBridge {
+    @android.webkit.JavascriptInterface <methods>;
+}

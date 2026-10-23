@@ -22,8 +22,8 @@ class HttpAPIIamService(
     private val retryPolicy: RetryPolicy
 ) : IAMService {
     override suspend fun apiFetch(apiFetchRequest: APIFetchRequest): ServiceResult<APIFetchResult> {
-        logger.info {
-            "Received apiFetch request: method=${apiFetchRequest.method}, path=${apiFetchRequest.path}, headers=${apiFetchRequest.headers}, body=${apiFetchRequest.body}"
+        logger.debug {
+            "apiFetch: ${apiFetchRequest.method} ${apiFetchRequest.path}"
         }
         var attempt = 0
         while ((attempt == 0 || apiFetchRequest.shouldRetry) && currentCoroutineContext().isActive) {
@@ -48,17 +48,14 @@ class HttpAPIIamService(
                         this.setHeader(key, value)
                     }
                 }.build()
-                logger.info {
-                    "apiFetch request: ${request.url}, headers: ${request.headers}, body: ${request.body} ${request.method}"
+                logger.verbose {
+                    "apiFetch request: ${request.method} ${request.url}, body: ${request.body}"
                 }
                 val response = httpClient.execute(request)
-                logger.info {
-                    "Received apiFetch response check headers: status=${response.status}, check: ${response.headers["Content-Type"]}"
-                }
                 val bodyType =
                     if (response.headers["Content-Type"]?.contains("application/json") == true) "json" else "text"
-                logger.info {
-                    "apiFetch response: status=${response.status}, headers=${response.headers}, body=${response.body}, bodyType=$bodyType"
+                logger.verbose {
+                    "apiFetch response: status=${response.status}, body=${response.body}, bodyType=$bodyType"
                 }
                 return ServiceResult.Success(
                     APIFetchResult(

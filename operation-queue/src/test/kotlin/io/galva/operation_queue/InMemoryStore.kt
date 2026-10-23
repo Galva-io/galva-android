@@ -58,4 +58,11 @@ class InMemoryStore : OperationStore {
         rows.clear()
         refresh()
     }
+
+    override suspend fun clearOwnedBy(ownerId: String) {
+        rows.values.filter { it.ownerId == ownerId }.forEach { rows.remove(it.id); locks.remove(it.id) }
+        refresh()
+    }
+
+    fun ids() = rows.keys.toList()
 }

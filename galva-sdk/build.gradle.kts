@@ -7,8 +7,7 @@ android {
     namespace = "io.galva.sdk"
     defaultConfig {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "BASE_API_URL",findProperty("BASE_API_URL") as String )
-        buildConfigField("String", "BASE_API_URL_PROD",findProperty("BASE_API_URL_PROD") as String )
+        consumerProguardFiles("consumer-rules.pro")
         buildConfigField("String", "SDK_VERSION","\"${findProperty("VERSION_NAME") as String}\"" )
     }
 
@@ -22,10 +21,10 @@ dependencies {
     implementation(libs.androidx.activity.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.lifecycle.process)
-    implementation(libs.kotlinx.coroutines.core)
+    api(libs.kotlinx.coroutines.core)
 
     testImplementation(libs.billing.ktx)
-    testImplementation(libs.core.ktx)
+    testImplementation(libs.androidx.test.core.ktx)
     testImplementation(libs.junit)
     testImplementation(libs.mockito.kotlin)
     testImplementation(libs.robolectric)

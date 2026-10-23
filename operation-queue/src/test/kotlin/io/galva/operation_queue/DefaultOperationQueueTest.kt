@@ -276,6 +276,101 @@ class DefaultOperationQueueTest {
         q.stop()
     }
 
+    @Test
+    fun `permanent failure drops the batch without backoff`() = runTest {
+        val c = QueueContainer(this).apply { sender.queueFailure(PermanentSendException("HTTP 400")) }
+        val q = c.build(flushTimeout = 100.milliseconds).also { it.start() }
+
+        q.enqueueDefault("poison")
+        advanceTimeBy(150.milliseconds)
+        runCurrent()
+
+        assertEquals(1, c.sender.batches.size)
+        assertEquals(0, c.store.rowCount())
+        assertEquals(0, (c.retry as StubRetryPolicy).calls)
+        q.stop()
+    }
+
+    @Test
+    fun `permanently rejected batch does not block later operations`() = runTest {
+        val c = QueueContainer(this).apply { sender.queueFailure(PermanentSendException("HTTP 422")) }
+        val q = c.build(flushTimeout = 100.milliseconds).also { it.start() }
+
+        q.enqueueDefault("poison")
+        advanceTimeBy(150.milliseconds)
+        q.enqueueDefault("next")
+        advanceTimeBy(150.milliseconds)
+        runCurrent()
+
+        assertEquals(listOf(listOf("poison"), listOf("next")), c.sender.batches.map { b -> b.map { it.payload } })
+        assertEquals(0, c.store.rowCount())
+        q.stop()
+    }
+
+    @Test
+    fun `operation is dropped once it reaches the retry limit`() = runTest {
+        val c = QueueContainer(this).apply { repeat(5) { sender.queueFailure() } }
+        val q = DefaultOperationQueue(
+            store = c.store,
+            sender = c.sender,
+            gate = StreamNetworkGate(c.network),
+            batchPolicy = SizeOrTimeoutBatchPolicy(10, 100.milliseconds),
+            retryPolicy = c.retry,
+            clock = c.clock,
+            idGen = { "gen" },
+            transitionTrigger = OfflineToOnlineTrigger(c.network),
+            scope = backgroundScope,
+            maxRetryCount = 3,
+        ).also { it.start() }
+
+        q.enqueue(payload = "always-500", type = "default", id = "op")
+        advanceTimeBy(150.milliseconds)
+        runCurrent()
+
+        assertEquals(3, c.sender.batches.size)
+        assertEquals(0, c.store.rowCount())
+        q.stop()
+    }
+
+    @Test
+    fun `retry backoff receives a growing attempt number`() = runTest {
+        val attempts = mutableListOf<Int>()
+        val c = QueueContainer(this).apply {
+            repeat(3) { sender.queueFailure() }
+            retry = object : RetryPolicy {
+                override suspend fun backoff(runAttemptCount: Int, error: Throwable) {
+                    attempts += runAttemptCount
+                }
+            }
+        }
+        val q = c.build(flushTimeout = 100.milliseconds).also { it.start() }
+
+        q.enqueueDefault("a")
+        advanceTimeBy(150.milliseconds)
+        runCurrent()
+
+        assertEquals(listOf(1, 2, 3), attempts)
+        assertEquals(0, c.store.rowCount())
+        q.stop()
+    }
+
+    // ─── Clearing ────────────────────────────────────────────────────
+
+    @Test
+    fun `clearOwnedBy removes only the operations of that owner`() = runTest {
+        val c = QueueContainer(this).apply { network.setOnline(false) }
+        val q = c.build().also { it.start() }
+
+        q.enqueue(payload = "old-1", type = "default", id = "old-1", ownerId = "anon-old")
+        q.enqueue(payload = "old-2", type = "default", id = "old-2", ownerId = "anon-old")
+        q.enqueue(payload = "new-1", type = "default", id = "new-1", ownerId = "anon-new")
+        q.enqueue(payload = "push", type = "default", id = "push")
+        q.clearOwnedBy("anon-old")
+
+        assertEquals(listOf("new-1", "push"), c.store.ids())
+        q.stop()
+    }
+
     // ─── Persistence ─────────────────────────────────────────────────
 
     @Test

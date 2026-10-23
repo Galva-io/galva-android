@@ -21,6 +21,7 @@ webkit = "1.16.0"
 billing = "8.0.0"
 mockito = "6.3.0"
 androidxActivity = "1.8.0"
+androidxAnnotation = "1.9.1"
 
 [libraries]
 
@@ -29,8 +30,9 @@ androidx-webkit = { group = "androidx.webkit", name = "webkit", version.ref = "w
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 androidx-activity = { group = "androidx.activity", name = "activity", version.ref = "androidxActivity" }
+androidx-annotation = { group = "androidx.annotation", name = "annotation", version.ref = "androidxAnnotation" }
 androidx-activity-ktx = { group = "androidx.activity", name = "activity-ktx", version.ref = "androidxActivity" }
-androidx-lifecycle-process = { group = "androidx.lifecycle", name = "lifecycle-process", version = "lifecycle" }
+androidx-lifecycle-process = { group = "androidx.lifecycle", name = "lifecycle-process", version.ref = "lifecycle" }
 android-desugarJdkLibs = { group = "com.android.tools", name = "desugar_jdk_libs", version.ref = "androidDesugarJdkLibs" }
 android-gradlePlugin = { group = "com.android.tools.build", name = "gradle", version.ref = "agp" }
 kotlin-gradlePlugin = { group = "org.jetbrains.kotlin", name = "kotlin-gradle-plugin", version.ref = "kotlin" }
@@ -47,7 +49,7 @@ junit = { group = "junit", name = "junit", version.ref = "junit" }
 kotlinx-coroutines-test ={ group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "kotlinxCoroutines" }
 robolectric = {group = "org.robolectric", name = "robolectric", version.ref ="robolectric"}
 turbine = {group = "app.cash.turbine",name ="turbine",version = "1.1.0"}
-core-ktx = { group = "androidx.test", name = "core-ktx", version.ref = "coreKtxVersion" }
+androidx-test-core-ktx = { group = "androidx.test", name = "core-ktx", version.ref = "coreKtxVersion" }
 
 [plugins]
 android-application = {id = "com.android.application" ,version.ref = "agp"}

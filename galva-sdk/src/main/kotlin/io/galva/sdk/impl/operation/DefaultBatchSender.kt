@@ -6,6 +6,7 @@ import io.galva.common.utils.DateTimeFormatUtils
 import io.galva.common.utils.JsonUtils
 import io.galva.network.request.BatchCollectRequest
 import io.galva.network.request.messages.AliasMessage
+import io.galva.network.request.messages.BatchMessage
 import io.galva.network.request.messages.CreateCommunicationEndpointMessage
 import io.galva.network.request.messages.DeleteCommunicationEndpointMessage
 import io.galva.network.request.messages.IdentityMessage
@@ -13,84 +14,29 @@ import io.galva.network.request.messages.TrackMessage
 import io.galva.network.service.IdentifyService
 import io.galva.network.service.ServiceResult
 import io.galva.operation_queue.BatchSender
+import io.galva.operation_queue.PermanentSendException
 import io.galva.operation_queue.local.StoredOperation
+import kotlinx.serialization.KSerializer
 import java.util.Calendar
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
-class DefaultBatchSender(private val service: IdentifyService,
-    private val logger: Logger) : BatchSender {
+/**
+ * Uploads a batch to `identities/batchCollect` and classifies the outcome for the queue:
+ *
+ * - 2xx → success
+ * - 408, 429, 5xx, transport errors → retryable
+ * - other 4xx, encoding errors, a batch with nothing sendable → [PermanentSendException]
+ *   (retrying can never succeed and would block every operation behind it)
+ */
+class DefaultBatchSender(
+    private val service: IdentifyService,
+    private val logger: Logger,
+) : BatchSender {
     override suspend fun send(batch: List<StoredOperation>): Result<Unit> {
-        val messages = batch.mapNotNull {operation ->
-            logger.info {
-                "Processing message with type=${operation.type} and payload=${operation.payload}"
-            }
-            when (operation.type) {
-                "IdentityMessage" -> {
-                    runCatching { JsonUtils.defaultJson.decodeFromString<IdentityMessage>(operation.payload).also {
-                        logger.info {
-                            "Decoded IdentityMessage: $it"
-                        }
-                    } }.onFailure {
-                        logger.error {
-                            "Failed to decode TrackMessage with payload: ${operation.payload}"
-                        }
-                    }.getOrNull()
-                }
-
-                "AliasMessage" -> {
-                    runCatching { JsonUtils.defaultJson.decodeFromString<AliasMessage>(operation.payload).also {
-                        logger.info {
-                            "Decoded AliasMessage: $it"
-                        }
-                    } }.onFailure {
-                        logger.error {
-                            "Failed to decode TrackMessage with payload: ${operation.payload}"
-                        }
-                    }.getOrNull()
-                }
-                "TrackMessage" ->{
-                    runCatching { JsonUtils.defaultJson.decodeFromString<TrackMessage>(operation.payload).also {
-                        logger.info {
-                            "Decoded TrackMessage: $it"
-                        }
-                    } }.onFailure {
-                        logger.error {
-                            "Failed to decode TrackMessage with payload: ${operation.payload}"
-                        }
-                    }.getOrNull()
-                }
-
-                "CreateCommunicationEndpointMessage" ->{
-                    runCatching { JsonUtils.defaultJson.decodeFromString<CreateCommunicationEndpointMessage>(operation.payload).also {
-                        logger.info {
-                            "Decoded CreateCommunicationEndpointMessage: $it"
-                        }
-                    } }.onFailure {
-                        logger.error {
-                            "Failed to decode CreateCommunicationEndpointMessage with payload: ${operation.payload}"
-                        }
-                    }.getOrNull()
-                }
-                "DeleteCommunicationEndpointMessage" ->{
-                    runCatching { JsonUtils.defaultJson.decodeFromString<DeleteCommunicationEndpointMessage>(operation.payload).also {
-                        logger.info {
-                            "Decoded DeleteCommunicationEndpointMessage: $it"
-                        }
-                    } }.onFailure {
-                        logger.error {
-                            "Failed to decode DeleteCommunicationEndpointMessage with payload: ${operation.payload}"
-                        }
-                    }.getOrNull()
-                }
-
-                else -> null
-
-            }
-        }
-
+        val messages = batch.mapNotNull(::decode)
         if (messages.isEmpty()) {
-            return Result.failure(IllegalArgumentException("Batch contains no valid messages"))
+            return Result.failure(PermanentSendException("Batch contains no valid messages"))
         }
         val batchCallResult = service.sendBatchCollectRequest(
             BatchCollectRequest(
@@ -100,28 +46,45 @@ class DefaultBatchSender(private val service: IdentifyService,
             )
         )
         return when (batchCallResult) {
-            is ServiceResult.Error -> Result.failure(
-                batchCallResult.error.cause ?: Throwable("Unknown error")
-            )
-
-            is ServiceResult.Failure ->{
-
-                if(batchCallResult.retryable){
-                    val retryDuration = parseRetryAfter(batchCallResult)
-                    Result.failure(RetryAfterException(retryDuration))
-                }else{
-                    Result.failure(IllegalStateException("HTTP ${batchCallResult.status}: ${batchCallResult.body}"))
-                }
-            }
             is ServiceResult.Success<Unit> -> Result.success(Unit)
+
+            is ServiceResult.Failure -> if (batchCallResult.retryable) {
+                Result.failure(RetryAfterException(parseRetryAfter(batchCallResult)))
+            } else {
+                Result.failure(
+                    PermanentSendException("HTTP ${batchCallResult.status}: ${batchCallResult.body}")
+                )
+            }
+
+            is ServiceResult.Error -> Result.failure(batchCallResult.error)
+
             is ServiceResult.UnknownError -> Result.failure(
-                batchCallResult.exception.cause ?: Throwable("Unknown error")
+                PermanentSendException("Batch could not be sent", batchCallResult.exception)
             )
         }
     }
+
+    private fun decode(operation: StoredOperation): BatchMessage? {
+        val serializer: KSerializer<out BatchMessage> = when (operation.type) {
+            "IdentityMessage" -> IdentityMessage.serializer()
+            "AliasMessage" -> AliasMessage.serializer()
+            "TrackMessage" -> TrackMessage.serializer()
+            "CreateCommunicationEndpointMessage" -> CreateCommunicationEndpointMessage.serializer()
+            "DeleteCommunicationEndpointMessage" -> DeleteCommunicationEndpointMessage.serializer()
+            else -> {
+                logger.warn { "Dropping operation ${operation.id}: unsupported type ${operation.type}" }
+                return null
+            }
+        }
+        return runCatching { JsonUtils.defaultJson.decodeFromString(serializer, operation.payload) }
+            .onSuccess { logger.verbose { "Decoded ${operation.type}: $it" } }
+            .onFailure { logger.error(it) { "Dropping operation ${operation.id}: cannot decode ${operation.type}" } }
+            .getOrNull()
+    }
+
     private fun parseRetryAfter(failure: ServiceResult.Failure): Duration? {
-        val header = failure.headers["Retry-After"] ?: return null
+        val header = failure.headers["Retry-After"] ?: failure.headers["retry-after"] ?: return null
         // Delta-seconds form: "120"
-        return  header.toLongOrNull()?.let { return it.seconds }
+        return header.trim().toLongOrNull()?.seconds
     }
 }

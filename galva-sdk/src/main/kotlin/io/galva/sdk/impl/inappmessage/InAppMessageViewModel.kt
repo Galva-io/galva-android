@@ -3,7 +3,6 @@ package io.galva.sdk.impl.inappmessage
 import android.app.Activity
 import android.content.Context
 import android.os.Build
-import android.util.Log
 import android.view.WindowInsets
 import androidx.core.graphics.Insets
 import androidx.lifecycle.ViewModel
@@ -79,25 +78,20 @@ class InAppMessageViewModel(
         productId: String, basePlanId: String, offerId: String?
     ): ProductWithOfferPrice? {
         val product = billingManager.getProductCatalog(productId)
-        if(product == null){
-            println("Galva InAppMessageViewModel.getProductPrice: product is null for productId=$productId")
+        if (product == null) {
+            Galva.instance.logger.debug { "getProductPrice: product $productId is not in the catalog" }
             return null
         }
-        println("Galva InAppMessageViewModel.getProductPrice: product=$product")
         val basePlan = product.basePlans.firstOrNull {
             it.basePlan.id == basePlanId
         } ?: return null
-        println("Galva InAppMessageViewModel.getProductPrice: basePlan=$basePlan")
         val offer = offerId?.let {
             basePlan.offers.firstOrNull { it.offer.offerId == offerId }
         }
-        println("Galva InAppMessageViewModel.getProductPrice: offer=$offer")
         val baseProductOffer = basePlan.offers.firstOrNull {
             it.offer.offerId == null
         } ?: return null
-        println("Galva InAppMessageViewModel.getProductPrice: baseProductOffer=$baseProductOffer")
         val baseProductPrice = baseProductOffer.pricingPhases.firstOrNull() ?: return null
-        println("Galva InAppMessageViewModel.getProductPrice: baseProductPrice=$baseProductPrice")
         return ProductWithOfferPrice(
             basePrice = baseProductPrice.priceMicros,
             localizedBasePrice = baseProductPrice.priceFormatted,

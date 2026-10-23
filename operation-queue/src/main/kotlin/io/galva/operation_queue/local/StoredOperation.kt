@@ -6,4 +6,6 @@ data class StoredOperation(
     val payload: String,// serialized JSON
     val createdAt: Long,
     val retryCount: Int = 0,
+    /** Identity (anonymous id) the operation belongs to; null for identity-independent operations. */
+    val ownerId: String? = null,
 )

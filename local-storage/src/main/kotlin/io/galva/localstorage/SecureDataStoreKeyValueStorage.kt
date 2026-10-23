@@ -80,7 +80,6 @@ class SecureDataStoreKeyValueStorage(
 
     override fun <T> observeObject(key: String, serializer: KSerializer<T>): Flow<T?> =
         observeBlob(key).map { raw ->
-            println("observeObject: raw value for key '$key' is: $raw")
             raw?.let { runCatching { json.decodeFromString(serializer, it) }.getOrNull() }
         }
 
@@ -96,7 +95,6 @@ class SecureDataStoreKeyValueStorage(
 
     // ── internal: encrypt/decrypt with per-key AAD ────────────────────
     private suspend fun writeBlob(key: String, value: String?) {
-        println("observeObject: writeBlob $key")
         withContext(dispatcher) {
             prefs.edit().apply {
                 if (value == null) {

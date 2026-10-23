@@ -3,7 +3,6 @@ package io.galva.sdk.impl.inappmessage
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import android.util.Log
 import androidx.activity.viewModels
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -13,6 +12,7 @@ import io.galva.billing.model.BillingLaunchState
 import io.galva.common.network.ExponentialBackoffRetryPolicy
 import io.galva.common.network.RetryPolicy
 import io.galva.common.utils.DateTimeFormatUtils
+import io.galva.common.logger.Logger
 import io.galva.common.utils.JsonUtils
 import io.galva.iam.InAppMessageActivity
 import io.galva.iam.PageContext
@@ -42,6 +42,8 @@ import java.util.Locale
 
 @kotlinx.serialization.InternalSerializationApi
 class FullScreenInAppMessageActivity : InAppMessageActivity() {
+    override val logger: Logger get() = Galva.instance.logger
+
     private val viewModel: InAppMessageViewModel by viewModels(factoryProducer = {
         val httpClient = OkHttpClientBuilder().apiKey(Galva.instance.configuration.apiKey)
             .sdkVersion("android/${io.galva.sdk.BuildConfig.SDK_VERSION}")
@@ -211,8 +213,8 @@ class FullScreenInAppMessageActivity : InAppMessageActivity() {
                     }
                 }
             } else {
-                Galva.instance.logger.error {
-                    "API fetch failed response: ${response}"
+                logger.error {
+                    "API fetch failed: ${response::class.simpleName}"
                 }
             }
 

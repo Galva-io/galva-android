@@ -11,8 +11,9 @@ android {
 }
 dependencies {
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
+    implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.androidx.annotation)
     implementation(project(":common"))
-    implementation(libs.core.ktx)
     testImplementation(libs.mockwebserver)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

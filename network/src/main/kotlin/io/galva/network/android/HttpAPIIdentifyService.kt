@@ -37,8 +37,8 @@ class HttpAPIIdentifyService(
             val request =
                 RequestBuilder.post(Endpoint.IDENTIFY.toUrl(baseURL).plus("/batchCollect"))
                     .jsonBody(body).build()
-            logger.info {
-                "sendBatchCollectRequest request: ${request.url}, headers: ${request.headers}, body: ${request.body}"
+            logger.verbose {
+                "sendBatchCollectRequest request: ${request.url}, body: ${request.body}"
             }
             httpClient.execute(request).toServiceResult { _ ->
                 Unit
@@ -46,7 +46,7 @@ class HttpAPIIdentifyService(
         } catch (e: NetworkError) {
             ServiceResult.Error(e)
         } catch (e: Exception) {
-            println("sendBatchCollectRequest failed with Exception: ${e.message}, cause: ${e.cause?.message}")
+            logger.error(e) { "sendBatchCollectRequest failed" }
             ServiceResult.UnknownError(e)
         }
     }
@@ -64,8 +64,8 @@ class HttpAPIIdentifyService(
                     }
                     .query("channelType", request.channelType.id)
                     .build()
-            logger.info {
-                "fetchCommunications request: ${request.url}, headers: ${request.headers}, body: ${request.body} ${request.method}"
+            logger.debug {
+                "fetchCommunications request: ${request.method} ${request.url}"
             }
             httpClient.execute(request).toServiceResult { responseJson ->
                 DEFAULT_JSON.decodeFromString<CommunicationResponse>(responseJson)
@@ -108,17 +108,14 @@ class HttpAPIIdentifyService(
                 )
                     .jsonBody(body)
                     .build()
-            logger.info {
-                "resolveMessage request: ${apiRequest.url}, headers: ${apiRequest.headers}, body: ${apiRequest.body}"
+            logger.verbose {
+                "resolveMessage request: ${apiRequest.url}, body: ${apiRequest.body}"
             }
             httpClient.execute(apiRequest).toServiceResult { responseJson ->
-                logger.info {
+                logger.verbose {
                     "resolveMessage response: $responseJson"
                 }
                 val json = DEFAULT_JSON.parseToJsonElement(responseJson).jsonObject
-                logger.info {
-                    "Parsed JSON response: $json"
-                }
                 val jsonData =
                     json["data"]?.jsonObject ?: throw Exception("Missing data field in response")
                 val isValid = jsonData["valid"]?.jsonPrimitive?.booleanOrNull ?: false

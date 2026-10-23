@@ -6,7 +6,7 @@ data class Configuration(
     val apiKey: String,
     val logLevel: LogLevel = LogLevel.WARN,
     val autoTrackSessions: Boolean = true,
-    val env: Environment = Environment.Development
+    val env: Environment = Environment.Production
 ) {
     init {
         require(apiKey.isNotBlank()) { "apiKey must not be blank" }

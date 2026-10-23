@@ -1,20 +1,21 @@
 package io.galva.iam
 
 import android.content.Intent
+import android.content.pm.ApplicationInfo
+import android.net.Uri
 import android.os.Bundle
-import android.util.Log
-import android.view.ViewGroup
+import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
+import io.galva.common.logger.Logger
+import io.galva.common.logger.NoOpLogger
 import io.galva.common.utils.JsonUtils
-import io.galva.iam.bridge.BridgeMessage
 import io.galva.iam.bridge.BridgeResponse
 import io.galva.iam.bridge.BridgeStringResponse
 import io.galva.iam.bridge.JSBridge
@@ -26,7 +27,7 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.InternalSerializationApi
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
+import java.io.File
 
 abstract class InAppMessageActivity : ComponentActivity(), JSBridgeCallback {
 
@@ -34,10 +35,11 @@ abstract class InAppMessageActivity : ComponentActivity(), JSBridgeCallback {
 
     abstract fun getHtmlFilePath(): String
 
+    /** SDK logger; bridge traffic is only logged at DEBUG / VERBOSE. */
+    protected open val logger: Logger get() = NoOpLogger
 
     private lateinit var webView: WebView
     override fun onCreate(savedInstanceState: Bundle?) {
-        //   enableEdgeToEdge()
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         actionBar?.hide()
@@ -46,8 +48,11 @@ abstract class InAppMessageActivity : ComponentActivity(), JSBridgeCallback {
     }
 
     private fun createViews() {
-
-        val htmlFileUrl = getHtmlFilePath()
+        val bundleUri = Uri.fromFile(File(getHtmlFilePath()))
+        // Process-wide switch: only turn it on when the host app itself is a debuggable build.
+        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+            WebView.setWebContentsDebuggingEnabled(true)
+        }
         webView = WebView(this).apply {
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
@@ -59,25 +64,34 @@ abstract class InAppMessageActivity : ComponentActivity(), JSBridgeCallback {
 
                 loadsImagesAutomatically = true
                 mediaPlaybackRequiresUserGesture = false
-                mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
                 cacheMode = WebSettings.LOAD_DEFAULT
                 useWideViewPort = true
                 loadWithOverviewMode = true
+                // Needed to load the cached bundle from app storage; nothing else is reachable
+                // because navigation is restricted to that single file below.
                 allowFileAccess = true
+                allowContentAccess = false
             }
-            addJavascriptInterface(JSBridge(this@InAppMessageActivity), "galva")
-            WebView.setWebContentsDebuggingEnabled(true)
+            webViewClient = BundleOnlyWebViewClient(bundleUri)
+            addJavascriptInterface(JSBridge(this@InAppMessageActivity, logger), "galva")
 
-            loadUrl("file:///$htmlFileUrl")
+            loadUrl(bundleUri.toString())
         }
-//        root.addView(webView)
         setContentView(webView)
-//        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
-//            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-//            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
-////            insets
-//            WindowInsetsCompat.CONSUMED
-//        }
+    }
+
+    /**
+     * Allows only the bundle file to load in the WebView, like the iOS SDK. Links inside a
+     * message go through the `openDeepLink` / `openManageSubscription` bridge methods instead.
+     */
+    private inner class BundleOnlyWebViewClient(private val bundleUri: Uri) : WebViewClient() {
+        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+            val target = request.url
+            if (target.scheme == "file" && target.path == bundleUri.path) return false
+            logger.warn { "In-app message navigation blocked: ${target.scheme}://${target.host.orEmpty()}" }
+            return true
+        }
     }
 
     private fun configureBackPress() {
@@ -107,7 +121,9 @@ abstract class InAppMessageActivity : ComponentActivity(), JSBridgeCallback {
         webView.apply {
             stopLoading()
             clearHistory()
+            removeJavascriptInterface("galva")
             removeAllViews()
+            destroy()
         }
         super.onDestroy()
     }
@@ -162,7 +178,7 @@ abstract class InAppMessageActivity : ComponentActivity(), JSBridgeCallback {
         if(lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
             lifecycleScope.launch(Dispatchers.Main) {
                 val intent = Intent(Intent.ACTION_VIEW).apply {
-                    data = android.net.Uri.parse(url)
+                    data = Uri.parse(url)
                 }
                 startActivity(intent)
             }
@@ -172,12 +188,11 @@ abstract class InAppMessageActivity : ComponentActivity(), JSBridgeCallback {
     protected fun sendMessageToWebView(requestId: String, jsonPayload: JsonElement){
         if(lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)){
             lifecycleScope.launch(Dispatchers.Main){
-                val payload = BridgeResponse(
-                    result = jsonPayload,
-                    requestId = requestId
+                val payload = JsonUtils.defaultJson.encodeToString(
+                    BridgeResponse(result = jsonPayload, requestId = requestId)
                 )
-                Log.e("InAppMessageActivity","Sending message to WebView: ${JsonUtils.defaultJson.encodeToString(payload)}")
-                webView.evaluateJavascript("window.handleNativeMessage(${JsonUtils.defaultJson.encodeToString(payload)})", null)
+                logger.verbose { "Bridge out: $payload" }
+                webView.evaluateJavascript("window.handleNativeMessage($payload)", null)
             }
         }
 
@@ -186,12 +201,11 @@ abstract class InAppMessageActivity : ComponentActivity(), JSBridgeCallback {
     protected fun sendStringMessageToWebView(requestId: String, jsonPayload: String){
         if(lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)){
             lifecycleScope.launch(Dispatchers.Main){
-                val payload = BridgeStringResponse(
-                    result = jsonPayload,
-                    requestId = requestId
+                val payload = JsonUtils.defaultJson.encodeToString(
+                    BridgeStringResponse(result = jsonPayload, requestId = requestId)
                 )
-                Log.e("InAppMessageActivity","Sending message to WebView: ${JsonUtils.defaultJson.encodeToString(payload)}")
-                webView.evaluateJavascript("window.handleNativeMessage(${JsonUtils.defaultJson.encodeToString(payload)})", null)
+                logger.verbose { "Bridge out: $payload" }
+                webView.evaluateJavascript("window.handleNativeMessage($payload)", null)
             }
         }
 

@@ -7,7 +7,9 @@ import android.content.Intent
 import android.os.Build
 import io.galva.common.utils.NotificationUtils
 
-class SdkNotificationHandler(private val context: Context) {
+class SdkNotificationHandler(context: Context) {
+    private val context = context.applicationContext
+
     private val notificationManager =
         context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
@@ -30,8 +32,9 @@ class SdkNotificationHandler(private val context: Context) {
         val closeIntent = Intent(context, SdkNotificationDismissReceiver::class.java).apply {
             putExtra("communicationId", communicationId)
         }
+        // One notification per communication: a re-delivered push replaces its own notification.
         NotificationUtils.showPushNotification(
-            context, CHANNEL_ID, title, body, openIntent, closeIntent
+            context, CHANNEL_ID, communicationId.hashCode(), title, body, openIntent, closeIntent
         )
     }
 

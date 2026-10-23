@@ -140,10 +140,7 @@ class Galva @VisibleForTesting internal constructor(
     @JvmName("configureInternal")
     private fun configure(context: Context, configuration: Configuration) {
         if (isConfigured) {
-            log(
-                this.configuration.logLevel,
-                "Galva.configure() called twice — ignoring subsequent call."
-            )
+            logger.warn("Galva.configure() called twice — ignoring subsequent call.")
             return
         }
         this.config = configuration
@@ -238,7 +235,7 @@ class Galva @VisibleForTesting internal constructor(
                 updateProperties(ProfileProperty.LastActiveTime(System.currentTimeMillis()))
             }
         }
-        log(configuration.logLevel, "Galva configured (apiKey=${configuration.apiKey})")
+        logger.info { "Galva configured (env=${configuration.env})" }
     }
 
     fun identify(userId: String, email: String? = null, obfuscatedAccountId: String? = null) {
@@ -267,10 +264,7 @@ class Galva @VisibleForTesting internal constructor(
     private suspend fun setPushTokenInternal(token: String) {
         val invalidToken = identity.current.pushToken
         if (!(invalidToken.isNullOrEmpty())) {
-            log(
-                LogLevel.INFO,
-                "Overriding existing push token: $invalidToken with new token: $token"
-            )
+            logger.info { "Replacing the registered push token" }
             clearInvalidPushTokenInternal(invalidToken)
         }
         identity.setPushToken(token)
@@ -335,9 +329,12 @@ class Galva @VisibleForTesting internal constructor(
     }
 
     private suspend fun logoutInternal() {
+        // Drop the signed-out user's undelivered operations so none of them is sent after the
+        // switch. Scoped to that identity: operations of the next identity are never purged.
+        operationManager.clearOperationsOf(identity.current.anonymousId)
+        // Recorded after the purge so the endpoint deletion for the signed-out user still goes out.
         clearPushTokenInternal()
         identity.logout()
-        operationManager.clearAllOperation()
         operationManager.recordOperation(
             APIOperation.CreateAnonymousId(
                 identity.current.anonymousId, identity.current.obfuscatedAccountId
@@ -389,17 +386,6 @@ class Galva @VisibleForTesting internal constructor(
         sdkNotificationHandler.handleNotification(message)
     }
 
-
-    private fun log(level: LogLevel, message: String) {
-        when (level) {
-            LogLevel.NONE -> return
-            LogLevel.ERROR -> logger.error(message)
-            LogLevel.WARN -> logger.warn(message)
-            LogLevel.INFO -> logger.info(message)
-            LogLevel.DEBUG -> logger.debug(message)
-            LogLevel.VERBOSE -> logger.verbose(message)
-        }
-    }
 
     companion object {
         @JvmStatic

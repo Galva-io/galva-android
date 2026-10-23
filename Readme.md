@@ -1,53 +1,62 @@
 # Galva Android SDK
 
-A production-grade SDK for Android apps providing identity management, in-app messaging, billing, and event tracking — all behind a single, simple API.
+The Android client for [Galva](https://galva.io) — retention infrastructure for subscription apps.
 
-[![Maven Central](https://img.shields.io/maven-central/v/io.galva/sdk.svg)](https://central.sonatype.com/artifact/io.galva/sdk)
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![API](https://img.shields.io/badge/API-21%2B-brightgreen.svg)](https://android-arsenal.com/api?level=21)
+Add the SDK, identify your users and render the in-app messages Galva sends; Galva decides who needs a nudge and when (failed renewals, trials that don't convert, users about to churn) and delivers it in-app, by push or by email.
+
+| | |
+|---|---|
+| **Min SDK** | 24 (Android 7.0) |
+| **Compile SDK** | 36 |
+| **Kotlin** | 2.1+ (Java callers supported) |
+| **Distribution** | GitHub Packages — `io.galva.sdk:galva-sdk` |
+| **Required peer dependency** | Google Play Billing `billing-ktx` 8.0.0+ |
+| **Threading** | Every public call returns immediately; work runs on a background queue |
 
 ---
 
 ## Features
 
-- 🆔 **Identity** — Anonymous and identified user tracking with persistent storage
-- 💬 **In-app messaging** — WebView-based messages with bundle versioning and edge-to-edge UI
-- 💳 **Billing** — Play Billing integration with offline-cached product catalog
-- 📊 **Event tracking** — Reliable queue-based event delivery with exponential backoff
-- 🔐 **Offline-first** — All data persists locally; recovers gracefully from network failures
-- ⚡ **Lightweight** — Single artifact, minimal transitive dependencies
+- **Identity** — anonymous install id from the first launch, linked to your user id on `identify()`.
+- **User properties** — typed built-in traits plus free-form custom properties.
+- **In-app messages** — server-driven, WebView-based messages with a cached bundle and purchases from inside the message.
+- **Deep links** — open a targeted message from an email or push; links that arrive before sign-in are replayed after `identify()`.
+- **Push notifications** — FCM token registration, rendering and tap / dismiss tracking for Galva notifications.
+- **Billing** — Play Billing integration with an offline-cached product catalog.
+- **Offline-first delivery** — updates are persisted to SQLite and retried with backoff.
 
----
-
-## Installation
-
-Add the dependency to your app's `build.gradle.kts`:
-
-```kotlin
-dependencies {
-    implementation("io.galva:sdk:1.0.0")
-    //Galva SDK requires 8.0+
-    implementation("com.android.billingclient:billing-ktx:8.0.0")
-}
-```
-
-Or in `build.gradle`:
-
-```groovy
-dependencies {
-    implementation 'io.galva:sdk:1.0.0'
-    implementation 'com.android.billingclient:billing-ktx:8.0.0'
-}
-```
-
-**Requirements:**
-- Android API 24+ (7.0+)
-- Kotlin 1.9+
 ---
 
 ## Quick start
 
-### 1. Configure on app startup
+**1. Add the repository and dependencies** — full details, including credentials, in [docs/installation.md](docs/installation.md):
+
+```kotlin
+// settings.gradle.kts
+dependencyResolutionManagement {
+    repositories {
+        google()
+        mavenCentral()
+        maven {
+            url = uri("https://maven.pkg.github.com/Galva-io/galva-android")
+            credentials {
+                username = providers.gradleProperty("gpr.user").orNull
+                password = providers.gradleProperty("gpr.key").orNull   // token with read:packages
+            }
+        }
+    }
+}
+```
+
+```kotlin
+// app/build.gradle.kts
+dependencies {
+    implementation("io.galva.sdk:galva-sdk:<version>")
+    implementation("com.android.billingclient:billing-ktx:8.0.0")
+}
+```
+
+**2. Configure once** in your `Application`:
 
 ```kotlin
 class MyApp : Application() {
@@ -56,248 +65,129 @@ class MyApp : Application() {
         Galva.configure(
             context = this,
             configuration = Configuration(
-                apiKey = "your-api-key",
-                logLevel = LogLevel.WARN,
+                apiKey = BuildConfig.GALVA_API_KEY,
+                env = if (BuildConfig.DEBUG) Environment.Development else Environment.Production,
+                logLevel = if (BuildConfig.DEBUG) LogLevel.DEBUG else LogLevel.WARN,
             ),
         )
     }
 }
 ```
 
-Register in your `AndroidManifest.xml`:
-
-```xml
-<application
-    android:name=".MyApp"
-    ...>
-</application>
-```
-
-### 2. Identify users
+**3. Identify the user** after sign-in (and on start-up for restored sessions):
 
 ```kotlin
-// Identify by user ID
-Galva.instance.identify("user-42")
+Galva.instance.identify("user_42", email = "jane@example.com")
+Galva.instance.updateProperties(ProfileProperty.Custom("plan_tier", "pro"))
 
-// Identify with email
-Galva.instance.identify("user-42", "user@example.com")
-
-// Identify with email and obfuscated account ID (for Play Billing)
-Galva.instance.identify("user-42", "user@example.com", "obfuscated-account-id")
-
-// Update profile properties
-Galva.instance.updateProperties(
-    ProfileProperty("plan", "premium"),
-    ProfileProperty("signup_date", "2026-01-15"),
-)
-
-// Log out
+// on sign-out
 Galva.instance.logout()
 ```
 
-### 3. Show in-app messages
+**4. Render in-app messages** from your main activity:
 
 ```kotlin
-class MainActivity : AppCompatActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-
-        lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.RESUMED) {
-                Galva.instance.getInAppMessage().collect { message ->
-                    Galva.instance.showMessage(this@MainActivity, message)
-                }
-            }
+lifecycleScope.launch {
+    repeatOnLifecycle(Lifecycle.State.RESUMED) {
+        Galva.instance.getInAppMessage().collect { message ->
+            Galva.instance.showMessage(this@MainActivity, message)
         }
     }
 }
 ```
-### 4. Handle deep links
 
-Declare an exact app scheme beginning with `gv` in the activity that receives deep links:
-
-```xml
-<intent-filter>
-    <action android:name="android.intent.action.VIEW" />
-    <category android:name="android.intent.category.DEFAULT" />
-    <category android:name="android.intent.category.BROWSABLE" />
-    <data android:scheme="gv-my-app" />
-</intent-filter>
-```
-
-Forward both the initial intent and any new intent to Galva:
-
-```kotlin
-override fun onCreate(savedInstanceState: Bundle?) {
-    super.onCreate(savedInstanceState)
-    intent.data?.let(Galva.instance::handleOpenURL)
-}
-
-override fun onNewIntent(intent: Intent) {
-    super.onNewIntent(intent)
-    intent.data?.let(Galva.instance::handleOpenURL)
-}
-```
-
-The currently supported route is:
-
-```text
-gv-my-app://openCommunication?communicationId=<communication-id>
-```
-
-If the user is anonymous, Galva retains only the latest link and opens it after `identify()`.
-
-### 5. Enable FCM push notifications
-```kotlin
-class MyFirebaseService : FirebaseMessagingService() {
-    override fun onNewToken(token: String) {
-        Galva.instance.setPushToken(token)
-    }
-}
-```
+That is the core integration. Deep links and push take a few more lines each — see the [integration guide](docs/integration-guide.md).
 
 ---
 
-## Configuration
+## Documentation
 
-The `Configuration` class accepts:
-
-| Property | Type | Description |
-|---|---|---|
-| `apiKey` | `String` | Your Galva API key (required) |
-| `logLevel` | `LogLevel` | Log verbosity: `NONE`, `ERROR`, `WARN`, `INFO`, `DEBUG`, `VERBOSE` |
-| `baseUrl` | `String?` | Override the default API endpoint (optional) |
-
-```kotlin
-Configuration(
-    apiKey = "your-api-key",
-    logLevel = if (BuildConfig.DEBUG) LogLevel.DEBUG else LogLevel.WARN,
-)
-```
+| Guide | What's inside |
+|---|---|
+| [Installation](docs/installation.md) | Requirements, GitHub Packages credentials, dependencies, configuration, verifying the setup, R8 |
+| [Integration guide](docs/integration-guide.md) | Configuration reference, identity, properties, in-app messages (Views + Compose), deep links, FCM push, billing, logging, Java |
+| [Troubleshooting](docs/troubleshooting.md) | Common problems and how to diagnose them |
 
 ---
 
-## API reference
+## API at a glance
 
-### `Galva.instance`
-
-The singleton entry point. All operations go through `Galva.instance`.
-
-#### Identity
+All calls go through `Galva.instance` (`io.galva.sdk.Galva`).
 
 ```kotlin
-fun identify(userId: String, email: String?, obfuscatedAccountId: String? = null)
+// Setup
+Galva.configure(context, configuration)          // static, once, from Application.onCreate()
+
+// Identity
+fun identify(userId: String, email: String? = null, obfuscatedAccountId: String? = null)
 fun updateProperties(vararg properties: ProfileProperty)
 fun logout()
-
-val currentUserId: String       // returns userId or anonymousId
+val currentUserId: String          // userId, or the anonymous id
 val isAnonymous: Boolean
-val obfuscatedAccountId: String?  // for Play Billing integration
-```
+val obfuscatedAccountId: String
 
-#### In-app messaging
-
-```kotlin
+// In-app messages
 fun getInAppMessage(): Flow<Message>
 fun showMessage(activity: Activity, message: Message)
+
+// Deep links
 fun handleOpenURL(uri: Uri)
-```
 
-#### Billing
+// Push (FCM)
+fun setPushToken(token: String)
+fun clearPushToken()
+fun isGalvaNotification(data: Map<String, String>): Boolean
+fun handlePush(data: Map<String, String>)
 
-```kotlin
-val billing: BillingManager
-```
+// Billing
+val billingManager: BillingManager
 
-#### Logging control
-
-```kotlin
+// Logging
 fun setLogLevel(level: LogLevel)
 fun setEnableLogging(enabled: Boolean)
 ```
 
 ---
 
-## Troubleshooting
+## Sample app
 
-### "Galva not configured" error
+The [`app`](app) module is a minimal integration. To run it, add your development key to `app/local.properties` (this file must not be committed):
 
-Make sure `Galva.configure()` is called in your `Application.onCreate()` **before** any other SDK call.
-
-### Catalog is empty after `refresh()`
-
-The SDK queries Play Billing for product details based on IDs from your backend. Verify:
-1. Your products are configured in Google Play Console
-2. Product IDs from your API match those in Play Console
-3. The test device has a Google account with billing access
-4. For test builds, the app is signed and uploaded to Internal Testing
-
-Check logs with `LogLevel.DEBUG` to trace the fetch → resolve → persist flow.
-
-### Purchase flow never completes
-
-Common causes:
-- Test account not added to "License testers" in Play Console
-- App not uploaded to Internal Testing track
-- `BillingClient.queryProductDetailsAsync` returns empty for unpublished products
-
-Enable verbose logging to inspect `BillingClient` response codes.
-
-### In-app message not showing
-
-The IAM system fetches messages on a 5-second poll plus app foreground events. Verify:
-- Your backend is returning messages for the current user
-- WebView bundle version matches the SDK's expected version
-- Network connectivity is available on first message resolution
-
----
-
-## Module structure
-
-```
-:build-logic           ← Gradle configuration and dependency management
-:common                ← Logger, Configuration, shared utilities
-:core                  ← Core SDK models
-:local-storage         ← key value secured storage implementation
-:identity              ← IdentityManager interface
-:operation-queue       ← OperationManager interface
-:network               ← HttpClient, service interfaces
-:inapp-message         ← InAppMessagingManager interface, Message types
-:billing               ← BillingManager interface, catalog types
-:galva-sdk             ← Default implementations + Galva facade (published artifact)
+```properties
+GALVA_API_KEY=pk_test_xxxxxxxx
 ```
 
-Consumers interact only with `:galva-sdk` via the `io.galva:sdk:1.0.0` Maven coordinate.
-
----
-
-## License
-
-```
-Copyright 2026 Galva
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+```bash
+./gradlew :app:installDebug
 ```
 
 ---
 
-## Contributing
+## Project structure
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code style, and PR guidelines.
+```
+:galva-sdk       ← public facade (Galva) + default implementations — the artifact apps depend on
+:core            ← configuration, environment, operation contracts
+:identity        ← identity model and store
+:operation-queue ← persistent batching queue (SQLite)
+:network         ← HTTP client and API services
+:inapp-message   ← in-app message activity, JS bridge, bundle cache
+:billing         ← billing contracts, catalog and entitlement stores
+:local-storage   ← encrypted key-value storage
+:common          ← logger, utilities
+:build-logic     ← Gradle convention plugins (build, publishing)
+:app             ← sample app
+```
+
+Apps depend only on `io.galva.sdk:galva-sdk`; the other modules are published as its transitive dependencies.
+
+---
 
 ## Support
 
-- 📚 [Documentation](https://docs.galva.dev)
 - 🐛 [Report a bug](https://github.com/Galva-io/galva-android/issues)
-- 💬 [Discussions](https://github.com/Galva-io/galva-android/discussions)
 - 📧 support-dev@galva.io
+
+## License
+
+Licensed under the Apache License, Version 2.0 (as declared in the published POM).

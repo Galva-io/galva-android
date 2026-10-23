@@ -76,7 +76,12 @@ class DefaultOperationManager internal constructor(
     override suspend fun recordOperation(apiOperation: APIOperation) {
         val batchMessage = converter.operationToBatchMessage(apiOperation)
         val payload = JsonUtils.defaultJson.encodeToString(batchMessage)
-        operationQueue.enqueue(payload, apiOperation.opType, UUIDv7.randomUUID().toString())
+        operationQueue.enqueue(
+            payload = payload,
+            type = apiOperation.opType,
+            id = UUIDv7.randomUUID().toString(),
+            ownerId = apiOperation.ownerId,
+        )
     }
 
     override fun stopRecordOperation() {
@@ -89,6 +94,10 @@ class DefaultOperationManager internal constructor(
 
     override suspend fun clearAllOperation() {
         operationQueue.clear()
+    }
+
+    override suspend fun clearOperationsOf(anonymousId: String) {
+        operationQueue.clearOwnedBy(anonymousId)
     }
 
     companion object {

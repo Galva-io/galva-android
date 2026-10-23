@@ -1,8 +1,9 @@
 package io.galva.iam.bridge
 
-import android.util.Log
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
+import io.galva.common.logger.Logger
+import io.galva.common.logger.NoOpLogger
 import io.galva.common.utils.JsonUtils
 import io.galva.network.request.APIFetchRequest
 import kotlinx.serialization.InternalSerializationApi
@@ -42,22 +43,26 @@ data class AlertAction(
 )
 
 class JSBridge(
-    val callback: JSBridgeCallback
+    val callback: JSBridgeCallback,
+    private val logger: Logger = NoOpLogger,
 ) {
     @OptIn(InternalSerializationApi::class)
     @JavascriptInterface
     fun postMessage(message: String) {
-        // Handle the message received from JavaScript
-        // You can parse the message and perform actions based on its content
-        Log.e("JSBridge", "Received message: $message")
+        // Payloads can contain personal data, so they are only logged at VERBOSE.
+        logger.verbose { "Bridge in: $message" }
         val parsedMessage = runCatching {
             JsonUtils.defaultJson.decodeFromString<BridgeMessage>(message)
+        }.onFailure {
+            logger.warn(it) { "Bridge: failed to decode envelope" }
         }.getOrNull() ?: return
-        Log.e("JSBridge", "Received parsedMessage: $parsedMessage")
         val method = BridgeMethod.entries.firstOrNull {
             it.methodName == parsedMessage.name
-        } ?: return
-        Log.e("JSBridge", "Received method: $method")
+        } ?: run {
+            logger.warn { "Bridge: unknown method ${parsedMessage.name}" }
+            return
+        }
+        logger.debug { "Bridge in: ${method.methodName} (${parsedMessage.requestId})" }
         when (method) {
             BridgeMethod.Ready -> {
 
@@ -96,7 +101,6 @@ class JSBridge(
             }
 
             BridgeMethod.GetProductPrice -> {
-                Log.e("JSBridge", "GetProductPrice called with payload: ${parsedMessage.payload}")
                 val payload = parsedMessage.payload ?: return
                 val productId = payload["productId"]?.jsonPrimitive?.content ?: return
                 val basePlanId = payload["basePlanId"]?.jsonPrimitive?.content ?: return
@@ -109,10 +113,7 @@ class JSBridge(
                 val apiFetchRequest = runCatching {
                     JsonUtils.defaultJson.decodeFromString<APIFetchRequest>(payload)
                 }.onFailure {
-                    Log.e(
-                        "JSBridge",
-                        "Failed to parse APIFetchRequest: ${it.message}, payload: $payload"
-                    )
+                    logger.warn(it) { "Bridge: invalid apiFetch payload" }
                 }.getOrNull() ?: return
                 callback.onDoApiFetch(parsedMessage.requestId, apiFetchRequest)
             }
@@ -122,10 +123,7 @@ class JSBridge(
                 val options = runCatching {
                     JsonUtils.defaultJson.decodeFromString<ShowAlertOptions>(payload)
                 }.onFailure {
-                    Log.e(
-                        "JSBridge",
-                        "Failed to parse ShowAlertOptions: ${it.message}, payload: $payload"
-                    )
+                    logger.warn(it) { "Bridge: invalid showAlert payload" }
                 }.getOrNull() ?: return
                 callback.onShowAlert(parsedMessage.requestId, options)
             }

@@ -32,7 +32,6 @@ object DeviceUtils {
             return telephonyManager.simCountryIso
         }
         catch (e: Exception) {
-            e.printStackTrace()
         }
         return null
     }
@@ -43,7 +42,6 @@ object DeviceUtils {
             return telephonyManager.networkCountryIso
         }
         catch (e: Exception) {
-            e.printStackTrace()
         }
         return null
     }
@@ -58,7 +56,6 @@ object DeviceUtils {
             return localeLanguage
         }
         catch (e: Exception) {
-            e.printStackTrace()
         }
         return null
     }
@@ -68,7 +65,6 @@ object DeviceUtils {
             return localeLanguage
         }
         catch (e: Exception) {
-            e.printStackTrace()
         }
         return null
     }

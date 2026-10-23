@@ -179,8 +179,8 @@ class DefaultInAppMessagingManager private constructor(
         while (hasMore) {
             val request =
                 ListCommunicationRequest(ChannelType.IN_APP_MESSAGE, anonymousId, identityManager.userId,cursor, 20)
-            logger.error {
-                "Fetching messages with request: anonymousId=${request.anonymousId}, cursor=${request.cursor}, limit=${request.limit}, channelType=${request.channelType}"
+            logger.debug {
+                "Fetching messages: cursor=${request.cursor}, limit=${request.limit}, channelType=${request.channelType}"
             }
             when (val serviceResult = identityService.fetchCommunications(request)) {
                 is ServiceResult.Success<CommunicationResponse> -> {

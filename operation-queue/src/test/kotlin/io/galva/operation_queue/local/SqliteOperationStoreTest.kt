@@ -1,5 +1,6 @@
 package io.galva.operation_queue.local
 
+import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import app.cash.turbine.test
 import io.galva.common.logger.NoOpLogger
@@ -405,11 +406,62 @@ class SqliteOperationStoreTest {
 
     // ── helpers ────────────────────────────────────────────────────────────
 
+    // ── clearOwnedBy ────────────────────────────────────────────────────────
+
+    @Test
+    fun `ownerId round-trips through claimBatch`() = runTest {
+        store.insert(makeOp("op1", ownerId = "anon-1"))
+        store.insert(makeOp("op2", createdAt = nowMs + 1))
+
+        val claimed = store.claimBatch(10, "tok", nowMs)
+        assertEquals(listOf("anon-1", null), claimed.map { it.ownerId })
+    }
+
+    @Test
+    fun `clearOwnedBy removes only that owner's rows, locked or not`() = runTest {
+        store.insert(makeOp("old-locked", ownerId = "anon-old", createdAt = nowMs))
+        store.claimBatch(1, "tok", nowMs)
+        store.insert(makeOp("old-pending", ownerId = "anon-old", createdAt = nowMs + 1))
+        store.insert(makeOp("new", ownerId = "anon-new", createdAt = nowMs + 2))
+        store.insert(makeOp("unowned", createdAt = nowMs + 3))
+
+        store.clearOwnedBy("anon-old")
+        store.releaseAllLocks()
+
+        val remaining = store.claimBatch(10, "tok2", nowMs)
+        assertEquals(listOf("new", "unowned"), remaining.map { it.id })
+    }
+
+    @Test
+    fun `upgrade from v1 keeps pending operations`() = runTest {
+        helper.close()
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        context.deleteDatabase(OperationsSqliteHelper.DB_NAME)
+        context.openOrCreateDatabase(OperationsSqliteHelper.DB_NAME, Context.MODE_PRIVATE, null).use { db ->
+            db.execSQL(
+                """CREATE TABLE operations (
+                       id TEXT PRIMARY KEY NOT NULL, created_at INTEGER NOT NULL, type TEXT NOT NULL,
+                       payload TEXT NOT NULL, lock_token TEXT, locked_at INTEGER,
+                       retry_count INTEGER NOT NULL DEFAULT 0, last_error TEXT)"""
+            )
+            db.execSQL("INSERT INTO operations (id, created_at, type, payload) VALUES ('legacy', 1, 'IdentityMessage', '{}')")
+            db.version = 1
+        }
+
+        helper = OperationsSqliteHelper(context)
+        store = SqliteOperationStore(helper, NoOpLogger, UnconfinedTestDispatcher())
+
+        val claimed = store.claimBatch(10, "tok", nowMs)
+        assertEquals(listOf("legacy"), claimed.map { it.id })
+        assertEquals(null, claimed.single().ownerId)
+    }
+
     private fun makeOp(
         id: String,
         type: String = "Identify",
         payload: String = """{"id":"$id"}""",
         createdAt: Long = nowMs,
         retryCount: Int = 0,
-    ) = StoredOperation(id, type, payload, createdAt, retryCount)
+        ownerId: String? = null,
+    ) = StoredOperation(id, type, payload, createdAt, retryCount, ownerId)
 }

@@ -24,4 +24,7 @@ interface OperationStore {
 
     /** remove all operations **/
     suspend fun clearAll()
+
+    /** Remove every operation owned by [ownerId], including rows currently claimed by the consumer. */
+    suspend fun clearOwnedBy(ownerId: String)
 }

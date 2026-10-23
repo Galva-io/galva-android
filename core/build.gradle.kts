@@ -7,12 +7,11 @@ android {
     namespace = "io.galva.sdk.core"
     defaultConfig {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "BASE_API_URL",findProperty("BASE_API_URL") as String )
-        buildConfigField("String", "BASE_API_URL_PROD",findProperty("BASE_API_URL_PROD") as String )
     }
 }
 dependencies {
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
+    implementation(libs.kotlinx.coroutines.core)
 
     api(project(":identity"))
     api(project(":operation-queue"))
@@ -22,7 +21,6 @@ dependencies {
     api(project(":network"))
     api(project(":inapp-message"))
 
-    implementation(libs.core.ktx)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
 }

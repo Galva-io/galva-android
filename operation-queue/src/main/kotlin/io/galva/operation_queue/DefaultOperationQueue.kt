@@ -25,6 +25,8 @@ class DefaultOperationQueue(
     private val transitionTrigger: NetworkTransitionTrigger,   // OFF→ON signal source
     private val scope: CoroutineScope,
     private val logger: Logger = NoOpLogger,
+    /** Failed attempts after which an operation is dropped, so a batch the backend keeps rejecting cannot block the queue forever. */
+    private val maxRetryCount: Int = DEFAULT_MAX_RETRY_COUNT,
     private val enqueueWake: Channel<Unit> = Channel(Channel.CONFLATED),
     private val forceWake: Channel<Unit> = Channel(Channel.CONFLATED),
 ) : OperationQueue {
@@ -44,8 +46,8 @@ class DefaultOperationQueue(
         children += scope.launch { transitionTrigger.signals().collect { forceWake.trySend(Unit) } }
     }
 
-    override suspend fun enqueue(payload: String, type: String, id: String?) {
-        logger.info {
+    override suspend fun enqueue(payload: String, type: String, id: String?, ownerId: String?) {
+        logger.verbose {
             "enqueue: adding operation to store (id=${id ?: "gen"}, type=$type) payload =${payload}"
         }
         store.insert(
@@ -54,7 +56,8 @@ class DefaultOperationQueue(
                 type = type,
                 payload = payload,
                 createdAt = clock.nowMs(),
-                retryCount = 0
+                retryCount = 0,
+                ownerId = ownerId,
             )
         )
         enqueueWake.trySend(Unit)
@@ -65,9 +68,13 @@ class DefaultOperationQueue(
     }
 
     override suspend fun clear() {
-        stop()
+        // Rows claimed by an in-flight send are deleted too; the consumer's later
+        // delete/release of those ids is then a no-op, so no restart is needed.
         store.clearAll()
-        start()
+    }
+
+    override suspend fun clearOwnedBy(ownerId: String) {
+        store.clearOwnedBy(ownerId)
     }
 
     override fun stop() {
@@ -81,7 +88,7 @@ class DefaultOperationQueue(
 
     private suspend fun consumeLoop() {
         while (currentCoroutineContext().isActive) {
-            logger.info {
+            logger.debug {
                 "process queue: starting"
             }
             batchPolicy.awaitFlush(
@@ -100,37 +107,59 @@ class DefaultOperationQueue(
                 gate.awaitOnline()
                 continue
             }
-            logger.info {
-                "process queue: conditions met, claiming batch"
-            }
+            sendNextBatch()
+        }
+    }
+
+    /**
+     * Sends the oldest pending batch. Transient failures are retried with backoff, re-claiming
+     * the batch each time so retry counts are current; permanent failures and operations that
+     * exhausted [maxRetryCount] are dropped so they never block the operations behind them.
+     */
+    private suspend fun sendNextBatch() {
+        while (currentCoroutineContext().isActive) {
             val batch = store.claimBatch(batchPolicy.maxBatchSize, lockToken, clock.nowMs())
-            logger.info {
-                "process queue: claimed batch of size ${batch.size}"
+            if (batch.isEmpty()) return
+            logger.debug {
+                "process queue: sending ${batch.size} operations"
             }
-            if (batch.isEmpty()) continue
-            logger.info {
-                "process queue: sending... ${batch.size} operations"
-            }
-            var batchSendSuccess = false
-            while (batchSendSuccess.not() && currentCoroutineContext().isActive) {
-                val result = sender.send(batch)
-                if (result.isSuccess) {
-                    logger.info {
-                        "process queue: batch sent successfully, deleting from store"
+            val ids = batch.map { it.id }
+            val error = sender.send(batch).exceptionOrNull()
+            when {
+                error == null -> {
+                    logger.debug { "process queue: batch sent successfully, deleting from store" }
+                    store.delete(ids)
+                    return
+                }
+
+                error is PermanentSendException -> {
+                    logger.error(error) {
+                        "process queue: backend rejected batch permanently, dropping ${batch.size} operations"
                     }
-                    store.delete(batch.map { it.id })
-                    batchSendSuccess = true
-                    continue
-                } else {
-                    val err = result.exceptionOrNull() ?: continue
-                    logger.error {
-                        "process queue: failed to send batch: ${err.message}, releasing locks and applying backoff"
+                    store.delete(ids)
+                    return
+                }
+
+                else -> {
+                    val (exhausted, retryable) = batch.partition { it.retryCount + 1 >= maxRetryCount }
+                    if (exhausted.isNotEmpty()) {
+                        logger.error(error) {
+                            "process queue: dropping ${exhausted.size} operations after $maxRetryCount failed attempts"
+                        }
+                        store.delete(exhausted.map { it.id })
                     }
-                    store.release(batch.map { it.id })           // unlock + bump retry_count
-                    val attempt = batch.maxOf { it.retryCount }
-                    retryPolicy.backoff(attempt, err)              // suspend before next claim
+                    store.release(retryable.map { it.id })             // unlock + bump retry_count
+                    logger.warn(error) {
+                        "process queue: failed to send batch, retrying after backoff"
+                    }
+                    retryPolicy.backoff(batch.maxOf { it.retryCount } + 1, error)
+                    if (!gate.isOnline()) return                     // consumeLoop waits for connectivity
                 }
             }
         }
+    }
+
+    companion object {
+        const val DEFAULT_MAX_RETRY_COUNT = 30
     }
 }

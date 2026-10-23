@@ -3,7 +3,6 @@ package io.galva.billing.local
 import android.content.ContentValues
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
-import android.util.Log
 import io.galva.billing.model.BasePlan
 import io.galva.billing.model.BasePlanWithOffersModel
 import io.galva.billing.model.FullCatalog
@@ -54,12 +53,12 @@ class SqliteCatalogStore(
             withContext(ioDispatcher) {
                 val product = getProduct(sku)
                 if (product != null) {
-                    println("Galva Product found for SKU $sku: ${product.title}")
+                    logger.verbose { "Product found for SKU $sku" }
                     val basePlans = loadBasePlansForProduct(helper.readableDatabase, sku)
-                    println("Galva Loaded ${basePlans.size} base plans for product SKU $sku")
+                    logger.verbose { "Loaded ${basePlans.size} base plans for SKU $sku" }
                     ProductCatalog(product, basePlans)
                 } else {
-                    println("Galva No product found for SKU $sku")
+                    logger.verbose { "No product found for SKU $sku" }
                     null
                 }
             }
@@ -70,12 +69,12 @@ class SqliteCatalogStore(
         return withContext(ioDispatcher) {
             val product = getProduct(sku)
             if (product != null) {
-                println("Galva Product found for SKU $sku: ${product.title}")
+                logger.verbose { "Product found for SKU $sku" }
                 val basePlans = loadBasePlansForProduct(helper.readableDatabase, sku)
-                println("Galva Loaded ${basePlans.size} base plans for product SKU $sku")
+                logger.verbose { "Loaded ${basePlans.size} base plans for SKU $sku" }
                 ProductCatalog(product, basePlans)
             } else {
-                println("Galva No product found for SKU $sku")
+                logger.verbose { "No product found for SKU $sku" }
                 null
             }
         }
@@ -245,7 +244,7 @@ class SqliteCatalogStore(
                     bp.offers.forEach { offer ->
                         insertOffer(db, offer.offer, productSku = productCatalog.product.sku)
                         offer.pricingPhases.forEach { phase ->
-                            Log.e("GalvaBilling", "Inserting phase ${phase.id} for offer ${offer.offer.offerToken} and product ${productCatalog.product.sku}")
+                            logger.verbose { "Inserting phase ${phase.id} for product ${productCatalog.product.sku}" }
                             insertPhase(db,bp.basePlan.productSku,offer, phase)
                         }
                     }

@@ -26,11 +26,17 @@ object JsonUtils {
                 }
             )
 
-            is List<*> -> JsonArray(
+            is Iterable<*> -> JsonArray(
                 valueObject.map { convertObjectToJsonElement(it) }
             )
 
-            else -> JsonPrimitive(toString())
+            is Array<*> -> JsonArray(
+                valueObject.map { convertObjectToJsonElement(it) }
+            )
+
+            is Enum<*> -> JsonPrimitive(valueObject.name)
+
+            else -> JsonPrimitive(valueObject.toString())
         }
     }
     val defaultJson =
