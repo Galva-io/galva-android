@@ -48,7 +48,7 @@ class DeeplinkRouterTest {
 
         assertFalse(handled)
         assertEquals(0, identityManager.awaitInitializedCount)
-        assertEquals(0, inAppMessagingManager.cancelCount)
+        assertTrue(inAppMessagingManager.shownMessages.isEmpty())
         assertNull(pendingStore.pending)
     }
 
@@ -59,7 +59,7 @@ class DeeplinkRouterTest {
         )
 
         assertFalse(handled)
-        assertEquals(0, inAppMessagingManager.cancelCount)
+        assertTrue(inAppMessagingManager.shownMessages.isEmpty())
     }
 
     @Test
@@ -72,7 +72,7 @@ class DeeplinkRouterTest {
         assertFalse(missingIdHandled)
         assertFalse(blankIdHandled)
         assertEquals(0, identityManager.awaitInitializedCount)
-        assertEquals(0, inAppMessagingManager.cancelCount)
+        assertTrue(inAppMessagingManager.shownMessages.isEmpty())
     }
 
     @Test
@@ -95,8 +95,6 @@ class DeeplinkRouterTest {
 
         assertNull(pendingStore.pending)
         assertEquals(listOf(Message("communication-2")), inAppMessagingManager.shownMessages)
-        assertEquals(3, inAppMessagingManager.cancelCount)
-        assertEquals(3, inAppMessagingManager.resumeCount)
         assertEquals(
             context.applicationContext,
             inAppMessagingManager.presentationContexts.single(),
@@ -119,8 +117,32 @@ class DeeplinkRouterTest {
             listOf(Message("communication-cached")),
             inAppMessagingManager.shownMessages,
         )
-        assertEquals(listOf("cancel", "show", "resume"), inAppMessagingManager.events)
+        assertEquals(listOf("show"), inAppMessagingManager.events)
         assertEquals(1, identityManager.awaitInitializedCount)
+        assertNull(pendingStore.pending)
+    }
+
+    @Test
+    fun `all query parameters are passed to the message`() = runTest {
+        identityManager.identify("user-1", null, null)
+
+        router.handle(Uri.parse("gv://openCommunication?communicationId=c-1&utm_source=email"))
+
+        assertEquals(
+            listOf(mapOf("communicationId" to "c-1", "utm_source" to "email")),
+            inAppMessagingManager.parameters,
+        )
+    }
+
+    @Test
+    fun `communication already presented this session is not shown again`() = runTest {
+        identityManager.identify("user-1", null, null)
+        inAppMessagingManager.presentedIds += "communication-seen"
+
+        val handled = router.handle(Uri.parse("gv://openCommunication?communicationId=communication-seen"))
+
+        assertTrue(handled)
+        assertTrue(inAppMessagingManager.shownMessages.isEmpty())
         assertNull(pendingStore.pending)
     }
 
@@ -155,8 +177,8 @@ private class RecordingInAppMessagingManager : InAppMessagingManager {
     val events = mutableListOf<String>()
     val shownMessages = mutableListOf<Message>()
     val presentationContexts = mutableListOf<Context>()
-    var cancelCount = 0
-    var resumeCount = 0
+    val presentedIds = mutableSetOf<String>()
+    val parameters = mutableListOf<Map<String, String>>()
 
     override fun showMessage(context: Activity, message: Message) {
         recordMessage(context, message)
@@ -172,14 +194,11 @@ private class RecordingInAppMessagingManager : InAppMessagingManager {
         shownMessages += message
     }
 
-    override fun cancelFetchMessage() {
-        events += "cancel"
-        cancelCount++
-    }
+    override fun hasPresented(messageId: String): Boolean = messageId in presentedIds
 
-    override fun resumeFetchMessage() {
-        events += "resume"
-        resumeCount++
+    override fun showMessage(context: Context, message: Message, deepLinkParameters: Map<String, String>) {
+        parameters += deepLinkParameters
+        recordMessage(context, message)
     }
 }
 

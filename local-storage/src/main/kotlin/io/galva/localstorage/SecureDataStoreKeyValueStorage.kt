@@ -1,5 +1,6 @@
 package io.galva.localstorage
 
+import io.galva.common.InternalGalvaApi
 import android.content.Context
 import android.content.SharedPreferences
 import io.galva.localstorage.PrefKeyValueStorage.Companion.DEFAULT_JSON
@@ -15,6 +16,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 
+@InternalGalvaApi
 class SecureDataStoreKeyValueStorage(
     context: Context,
     fileName: String = "galva-secure-prefs",

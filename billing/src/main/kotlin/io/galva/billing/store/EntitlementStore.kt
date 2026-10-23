@@ -1,8 +1,10 @@
 package io.galva.billing.store
 
+import io.galva.common.InternalGalvaApi
 import io.galva.billing.model.Entitlement
 import kotlinx.coroutines.flow.Flow
 
+@InternalGalvaApi
 interface EntitlementStore {
     /** Snapshot of the current entitlement, or null if none. */
     suspend fun get(): Entitlement?

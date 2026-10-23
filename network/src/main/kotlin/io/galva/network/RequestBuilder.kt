@@ -1,8 +1,10 @@
 package io.galva.network
 
+import io.galva.common.InternalGalvaApi
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
+@InternalGalvaApi
 class RequestBuilder(private val method: HttpMethod, private val url: String) {
     private var headersBuilder = HttpHeaders.Builder()
     private var body: String? = null
@@ -30,6 +32,9 @@ class RequestBuilder(private val method: HttpMethod, private val url: String) {
     fun queries(params: Map<String, String>) = apply {
         params.forEach { (k, v) -> queryParams += k to v }
     }
+    /** Raw body; the caller sets the Content-Type header. */
+    fun body(value: String) = apply { this.body = value }
+
     fun jsonBody(body: String) = apply {
         this.body = body
         headersBuilder.set("Content-Type", "application/json; charset=utf-8")

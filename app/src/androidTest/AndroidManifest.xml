@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application>
+        <!-- okhttp-android (pulled in by MockWebServer) registers an androidx.startup provider, but the
+             test APK ships without androidx.startup (those classes live in the app APK). Whenever the
+             test package's own process starts (e.g. androidx.test bootstrap activities), the provider
+             crashes it. The tests run in the app process and need no initializer. -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            tools:node="remove" />
+    </application>
+</manifest>

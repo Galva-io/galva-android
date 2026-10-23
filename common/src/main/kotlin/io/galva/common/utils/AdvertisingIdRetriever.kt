@@ -1,11 +1,13 @@
 package io.galva.common.utils
 
+import io.galva.common.InternalGalvaApi
 import android.content.Context
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
+@InternalGalvaApi
 class AdvertisingIdRetriever(context: Context, advertisingScope: CoroutineScope) {
     private val _advertisingData = MutableStateFlow<AdvertisingInfo?>(null)
     val advertisingData = _advertisingData.value

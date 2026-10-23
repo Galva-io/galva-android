@@ -7,7 +7,6 @@ import io.galva.common.utils.DeviceUtils
 import io.galva.common.utils.NetworkInfoSource
 import io.galva.common.utils.OsInfoSource
 import io.galva.common.utils.ScreenSource
-import io.galva.common.utils.UUIDv7
 import io.galva.network.request.messages.AliasMessage
 import io.galva.network.request.messages.App
 import io.galva.network.request.messages.BatchMessage
@@ -18,12 +17,13 @@ import io.galva.network.request.messages.Network
 import io.galva.network.request.messages.OS
 import io.galva.network.request.messages.Screen
 import io.galva.core.protocol.operation.APIOperation
-import io.galva.core.protocol.operation.AdvertingProvider
+import io.galva.core.protocol.operation.AdvertisingProvider
 import io.galva.core.protocol.operation.OperationRequestConverter
 import io.galva.network.request.messages.CreateCommunicationEndpointMessage
 import io.galva.network.request.messages.DeleteCommunicationEndpointMessage
 import io.galva.network.request.messages.EndpointNotification
 import io.galva.network.request.messages.EndpointNotification.*
+import io.galva.network.request.messages.TrackMessage
 import io.galva.network.request.messages.TrackPushNotificationMessage
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -31,8 +31,8 @@ import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
 
-class DefaultOperationRequestConverter(
-    private val context: Context, private val advertingProvider: AdvertingProvider
+internal class DefaultOperationRequestConverter(
+    private val context: Context, private val advertisingProvider: AdvertisingProvider
 ) : OperationRequestConverter {
     override fun operationToBatchMessage(operation: APIOperation): BatchMessage {
         val messageContext = createMessageContext(context)
@@ -44,9 +44,11 @@ class DefaultOperationRequestConverter(
                     context = messageContext,
                     traits = JsonObject(
                         buildMap {
+                            // The account id Play purchases carry for this identity (the anonymous
+                            // id until the app passes an override to identify).
                             put(
                                 $$"$gv_obfuscatedAccountId",
-                                JsonPrimitive(UUIDv7.randomUUID().toString())
+                                JsonPrimitive(operation.obfuscatedAccountId)
                             )
                             put(
                                 $$"$gv_timezone",
@@ -130,6 +132,17 @@ class DefaultOperationRequestConverter(
                     context = messageContext,
                 )
             }
+            is APIOperation.Track -> {
+                TrackMessage(
+                    event = operation.event,
+                    timestamp = DateTimeFormatUtils.format(Calendar.getInstance()),
+                    anonymousId = operation.anonymousId,
+                    context = messageContext,
+                    endUserId = operation.userId,
+                    properties = operation.properties,
+                )
+            }
+
             is APIOperation.TrackPushNotification ->{
                 TrackPushNotificationMessage(
                     timestamp = DateTimeFormatUtils.format(Calendar.getInstance()),
@@ -146,8 +159,8 @@ class DefaultOperationRequestConverter(
             device = DeviceUtils.loadDeviceData(context).run {
                 Device(
                     id = id,
-                    adTrackingEnabled = advertingProvider.adTrackingEnabled(),
-                    advertisingId = advertingProvider.advertingId(),
+                    adTrackingEnabled = advertisingProvider.adTrackingEnabled(),
+                    advertisingId = advertisingProvider.advertisingId(),
                     manufacturer = manufacturer,
                     model = model,
                     name = name,

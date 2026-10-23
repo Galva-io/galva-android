@@ -1,9 +1,12 @@
 package io.galva.iam.bundle
 
+import io.galva.common.InternalGalvaApi
+
 
 import java.io.File
 import java.io.IOException
 
+@InternalGalvaApi
 class WebViewBundleCache(private val baseDir: File) {
     fun bundleFile(webviewVersion: String): File =
         File(baseDir, "inapp_message_${webviewVersion}.html")

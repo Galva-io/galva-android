@@ -6,7 +6,7 @@ import com.android.billingclient.api.PendingPurchasesParams
 import com.android.billingclient.api.PurchasesUpdatedListener
 import io.galva.common.logger.Logger
 
-class BillingClientFactory(
+internal class BillingClientFactory(
     private val context: Context,
     private val listener: PurchasesUpdatedListener,
     private val logger: Logger,

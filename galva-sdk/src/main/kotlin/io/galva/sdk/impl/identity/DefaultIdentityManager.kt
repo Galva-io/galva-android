@@ -17,7 +17,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.json.JsonObject
 
-class DefaultIdentityManager(
+internal class DefaultIdentityManager(
     private val store: IdentityStore,
     private val idGenerator: AnonymousIdGenerator,
     private val logger: Logger = NoOpLogger,

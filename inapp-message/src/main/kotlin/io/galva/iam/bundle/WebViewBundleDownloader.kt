@@ -1,11 +1,13 @@
 package io.galva.iam.bundle
 
+import io.galva.common.InternalGalvaApi
 import io.galva.network.HttpClient
 import io.galva.network.NetworkError
 import io.galva.network.RequestBuilder
 import io.galva.network.service.ServiceResult
 import kotlin.time.Duration.Companion.seconds
 
+@InternalGalvaApi
 class WebViewBundleDownloader(
     private val httpClient: HttpClient,
     private val baseUrl: String,

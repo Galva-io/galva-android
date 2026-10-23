@@ -24,7 +24,7 @@ import kotlin.coroutines.resume
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 
-class PlayBillingLauncher(
+internal class PlayBillingLauncher(
     private val billingClient: BillingClient,
     private val connection: PlayBillingConnection,
     private val cache: ProductDetailsCache,
@@ -73,6 +73,7 @@ class PlayBillingLauncher(
                 BillingLaunchState.Failed(
                     productId, offerToken,
                     "Billing not connected: ${t.message}", cause = t,
+                    kind = BillingLaunchState.FailureKind.NOT_CONNECTED,
                 )
             )
             return@flow
@@ -86,6 +87,7 @@ class PlayBillingLauncher(
                     BillingLaunchState.Failed(
                         productId, offerToken,
                         "ProductDetails missing for $productId — product not found in catalog",
+                        kind = BillingLaunchState.FailureKind.PRODUCT_NOT_FOUND,
                     )
                 )
                 return@flow
@@ -151,6 +153,7 @@ class PlayBillingLauncher(
                         BillingLaunchState.Failed(
                             productId, offerToken,
                             "Purchase flow timed out after $purchaseTimeout",
+                            kind = BillingLaunchState.FailureKind.TIMEOUT,
                         )
                     )
                     return@flow
@@ -165,6 +168,7 @@ class PlayBillingLauncher(
                 BillingLaunchState.Failed(
                     productId, offerToken,
                     "ProductDetails missing for $productId — product not found in catalog",
+                    kind = BillingLaunchState.FailureKind.PRODUCT_NOT_FOUND,
                 )
             )
         }
@@ -233,14 +237,17 @@ class PlayBillingLauncher(
             BillingClient.BillingResponseCode.OK -> {
                 val purchase: Purchase? =
                     event.purchases?.firstOrNull { it.products.contains(productId) }
-                if (purchase != null) {
+                if (purchase?.purchaseState == Purchase.PurchaseState.PENDING) {
+                    BillingLaunchState.Pending(productId, offerToken)
+                } else if (purchase != null) {
                     BillingLaunchState.Completed(
                         productSku = productId,
                         offerToken = offerToken,
                         purchaseToken = purchase.purchaseToken,
                         orderId = purchase.orderId,
                         purchaseTimestamp = purchase.purchaseTime,
-                        verified = purchase.isAcknowledged
+                        verified = purchase.isAcknowledged,
+                        obfuscatedAccountId = purchase.accountIdentifiers?.obfuscatedAccountId,
                     )
                 } else {
                     BillingLaunchState.Failed(

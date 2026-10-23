@@ -1,8 +1,10 @@
 package io.galva.network.response
 
+import io.galva.common.InternalGalvaApi
 import kotlinx.serialization.Serializable
 
 @Serializable
+@InternalGalvaApi
 data class CommunicationResponse(
     val data: List<Communication>,
     val success: Boolean,
@@ -10,6 +12,7 @@ data class CommunicationResponse(
 )
 
 @Serializable
+@InternalGalvaApi
 data class Communication(
     val id: String,
     val type: String,
@@ -19,6 +22,7 @@ data class Communication(
 }
 
 @Serializable
+@InternalGalvaApi
 data class Meta(
     val nextCursor: String?
 )

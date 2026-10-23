@@ -1,5 +1,6 @@
 package io.galva.common.utils
 
+import io.galva.common.InternalGalvaApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -7,6 +8,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
+@InternalGalvaApi
 object JsonUtils {
     fun convertObjectToJsonElement(valueObject :Any?): JsonElement {
         return when (valueObject) {

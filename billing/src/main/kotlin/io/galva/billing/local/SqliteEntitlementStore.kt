@@ -1,5 +1,6 @@
 package io.galva.billing.local
 
+import io.galva.common.InternalGalvaApi
 import android.content.ContentValues
 import android.database.sqlite.SQLiteDatabase
 import io.galva.billing.model.Entitlement
@@ -16,6 +17,7 @@ import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.withContext
 
+@InternalGalvaApi
 class SqliteEntitlementStore(
     private val helper: BillingSqliteHelper,
     private val logger: Logger,

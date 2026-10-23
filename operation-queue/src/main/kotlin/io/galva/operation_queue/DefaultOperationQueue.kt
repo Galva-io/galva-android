@@ -1,5 +1,7 @@
 package io.galva.operation_queue
 
+import io.galva.common.InternalGalvaApi
+
 
 import io.galva.common.logger.Logger
 import io.galva.common.logger.NoOpLogger
@@ -14,6 +16,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
+@InternalGalvaApi
 class DefaultOperationQueue(
     private val store: OperationStore,
     private val sender: BatchSender,
@@ -25,8 +28,8 @@ class DefaultOperationQueue(
     private val transitionTrigger: NetworkTransitionTrigger,   // OFF→ON signal source
     private val scope: CoroutineScope,
     private val logger: Logger = NoOpLogger,
-    /** Failed attempts after which an operation is dropped, so a batch the backend keeps rejecting cannot block the queue forever. */
-    private val maxRetryCount: Int = DEFAULT_MAX_RETRY_COUNT,
+    /** When set, the oldest operations are dropped so the store never holds more than this many. */
+    private val maxStoredCount: Int? = null,
     private val enqueueWake: Channel<Unit> = Channel(Channel.CONFLATED),
     private val forceWake: Channel<Unit> = Channel(Channel.CONFLATED),
 ) : OperationQueue {
@@ -60,6 +63,10 @@ class DefaultOperationQueue(
                 ownerId = ownerId,
             )
         )
+        maxStoredCount?.let { cap ->
+            val dropped = store.trimToNewest(cap)
+            if (dropped > 0) logger.warn { "enqueue: store cap $cap exceeded, dropped $dropped oldest operations" }
+        }
         enqueueWake.trySend(Unit)
     }
 
@@ -112,9 +119,9 @@ class DefaultOperationQueue(
     }
 
     /**
-     * Sends the oldest pending batch. Transient failures are retried with backoff, re-claiming
-     * the batch each time so retry counts are current; permanent failures and operations that
-     * exhausted [maxRetryCount] are dropped so they never block the operations behind them.
+     * Sends the oldest pending batch. Transient failures are retried with backoff until delivered,
+     * re-claiming the batch each time so retry counts are current; permanent failures are dropped
+     * so they never block the operations behind them.
      */
     private suspend fun sendNextBatch() {
         while (currentCoroutineContext().isActive) {
@@ -141,14 +148,7 @@ class DefaultOperationQueue(
                 }
 
                 else -> {
-                    val (exhausted, retryable) = batch.partition { it.retryCount + 1 >= maxRetryCount }
-                    if (exhausted.isNotEmpty()) {
-                        logger.error(error) {
-                            "process queue: dropping ${exhausted.size} operations after $maxRetryCount failed attempts"
-                        }
-                        store.delete(exhausted.map { it.id })
-                    }
-                    store.release(retryable.map { it.id })             // unlock + bump retry_count
+                    store.release(ids)                               // unlock + bump retry_count
                     logger.warn(error) {
                         "process queue: failed to send batch, retrying after backoff"
                     }
@@ -157,9 +157,5 @@ class DefaultOperationQueue(
                 }
             }
         }
-    }
-
-    companion object {
-        const val DEFAULT_MAX_RETRY_COUNT = 30
     }
 }

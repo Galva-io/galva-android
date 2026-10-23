@@ -1,7 +1,9 @@
 package io.galva.common.utils
 
+import io.galva.common.InternalGalvaApi
 import java.security.MessageDigest
 
+@InternalGalvaApi
 object HashUtils {
     // Derive a stable 64-char token from any upstream identifier.
 // SHA-256 hex is 64 chars — fits the Play limit exactly and contains no PII.

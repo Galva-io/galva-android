@@ -1,76 +1,66 @@
 package io.galva.sdk.impl.inappmessage
 
+import android.app.AlertDialog
 import android.content.Context
+import android.content.DialogInterface
 import android.content.Intent
-import android.os.Build
+import android.os.Bundle
 import androidx.activity.viewModels
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewModelScope
-import io.galva.billing.model.BillingLaunchState
-import io.galva.common.network.ExponentialBackoffRetryPolicy
-import io.galva.common.network.RetryPolicy
-import io.galva.common.utils.DateTimeFormatUtils
 import io.galva.common.logger.Logger
 import io.galva.common.utils.JsonUtils
 import io.galva.iam.InAppMessageActivity
-import io.galva.iam.PageContext
+import io.galva.iam.bridge.AlertAction
+import io.galva.iam.bridge.BridgeError
+import io.galva.iam.bridge.BridgeException
+import io.galva.iam.bridge.ProductPriceRequest
+import io.galva.iam.bridge.PurchaseRequest
 import io.galva.iam.bridge.ShowAlertOptions
-import io.galva.network.android.HttpAPIIamService
-import io.galva.network.android.OkHttpClientBuilder
 import io.galva.network.request.APIFetchRequest
 import io.galva.network.response.APIFetchResult
 import io.galva.network.service.ServiceResult
-import io.galva.sdk.BuildConfig
 import io.galva.sdk.Galva
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.InternalSerializationApi
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
-import kotlinx.serialization.json.jsonObject
-import java.util.Calendar
-import java.util.Locale
+import kotlinx.serialization.json.put
 
 @kotlinx.serialization.InternalSerializationApi
-class FullScreenInAppMessageActivity : InAppMessageActivity() {
+internal class FullScreenInAppMessageActivity : InAppMessageActivity() {
     override val logger: Logger get() = Galva.instance.logger
 
     private val viewModel: InAppMessageViewModel by viewModels(factoryProducer = {
-        val httpClient = OkHttpClientBuilder().apiKey(Galva.instance.configuration.apiKey)
-            .sdkVersion("android/${io.galva.sdk.BuildConfig.SDK_VERSION}")
-            .logger(Galva.instance.logger).build()
-        InAppMessageViewModelFactory(
-            Galva.instance.billingManager,
-            HttpAPIIamService(
-                Galva.instance.configuration.env.baseAPIUrl,
-                httpClient,
-                Galva.instance.logger,
-                ExponentialBackoffRetryPolicy()
-            )
-        )
+        InAppMessageViewModelFactory(Galva.instance.billingManager, Galva.instance.iamService)
     })
 
+    private var alertDialog: AlertDialog? = null
+
     companion object {
+        private const val EXTRA_MESSAGE_ID = "message_id"
         private const val EXTRA_HTML_FILE_PATH = "html_file_path"
         private const val EXTRA_PAYLOAD = "payload"
+        private const val EXTRA_DEEP_LINK_PARAMETERS = "deep_link_parameters"
 
         fun createIntent(
             context: Context,
+            messageId: String,
             bundleHtmlFilePath: String,
             payload: JsonObject?,
+            deepLinkParameters: Map<String, String> = emptyMap(),
         ): Intent {
             return Intent(context, FullScreenInAppMessageActivity::class.java).apply {
+                putExtra(EXTRA_MESSAGE_ID, messageId)
                 putExtra(EXTRA_HTML_FILE_PATH, bundleHtmlFilePath)
                 putExtra(EXTRA_PAYLOAD, payload?.toString())
+                putExtra(EXTRA_DEEP_LINK_PARAMETERS, Bundle().apply { deepLinkParameters.forEach(::putString) })
 
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
@@ -81,208 +71,169 @@ class FullScreenInAppMessageActivity : InAppMessageActivity() {
         return intent.getStringExtra(EXTRA_PAYLOAD)
     }
 
+    override fun getDeepLinkParameters(): Map<String, String> {
+        val bundle = intent.getBundleExtra(EXTRA_DEEP_LINK_PARAMETERS) ?: return emptyMap()
+        return bundle.keySet().mapNotNull { key -> bundle.getString(key)?.let { key to it } }.toMap()
+    }
+
     override fun getHtmlFilePath(): String {
         return intent.getStringExtra(EXTRA_HTML_FILE_PATH)
             ?: throw IllegalArgumentException("HTML file path is required")
     }
 
+    override fun onDestroy() {
+        alertDialog?.dismiss()
+        alertDialog = null
+        // A configuration change recreates the activity; anything else means the message is gone.
+        if (!isChangingConfigurations) {
+            intent.getStringExtra(EXTRA_MESSAGE_ID)?.let(ScreenMessageOverlay::notifyDismissed)
+        }
+        super.onDestroy()
+    }
+
     override fun onGetPageContext(requestId: String) {
-        super.onGetPageContext(requestId)
         viewModel.viewModelScope.launch(Dispatchers.IO) {
             val windowInsets = ViewCompat.getRootWindowInsets(window.decorView)
             val insets = windowInsets?.getInsets(WindowInsetsCompat.Type.systemBars())
             val pageContext =
                 viewModel.doGetPageContext(this@FullScreenInAppMessageActivity, insets)
             withContext(Dispatchers.Main) {
-                if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
-                    sendMessageToWebView(
-                        requestId, JsonUtils.defaultJson.encodeToJsonElement(pageContext)
+                sendMessageToWebView(requestId, JsonUtils.defaultJson.encodeToJsonElement(pageContext))
+            }
+        }
+    }
+
+    override fun onRequestPurchase(requestId: String, request: PurchaseRequest) {
+        viewModel.viewModelScope.launch(Dispatchers.IO) {
+            viewModel.launchBillingFlow(
+                this@FullScreenInAppMessageActivity,
+                request.productId,
+                request.basePlanId,
+                request.offerId,
+            ).collectLatest { state ->
+                val answer = PurchaseBridgeMapper.map(state, request) ?: return@collectLatest
+                withContext(Dispatchers.Main.immediate) {
+                    if (isDestroyed || isFinishing) return@withContext
+                    answer.fold(
+                        onSuccess = { sendMessageToWebView(requestId, it) },
+                        onFailure = { sendErrorToWebView(requestId, (it as BridgeException).error) },
                     )
                 }
             }
         }
     }
 
-
-    override fun onRequestPurchase(
-        requestId: String,
-        productId: String,
-        basePlanId: String,
-        offerId: String
-    ) {
-        super.onRequestPurchase(requestId, productId, basePlanId, offerId)
+    override fun onGetProductPrice(requestId: String, request: ProductPriceRequest) {
         viewModel.viewModelScope.launch(Dispatchers.IO) {
-            viewModel.launchBillingFlow(
-                this@FullScreenInAppMessageActivity,
-                productId,
-                basePlanId,
-                offerId
-            )
-                .collectLatest { state ->
-                    withContext(Dispatchers.Main.immediate) {
-                        if (isDestroyed.not() && isFinishing.not()) {
-                            val result: JsonObject? = when (state) {
-                                is BillingLaunchState.Cancelled -> {
-                                    JsonObject(
-                                        mapOf(
-                                            "outcome" to JsonPrimitive("cancelled"),
-                                        )
-                                    )
-
-                                }
-
-                                is BillingLaunchState.Completed -> {
-                                    JsonObject(
-                                        mapOf(
-                                            "outcome" to JsonPrimitive("completed"),
-                                            "transaction" to JsonObject(
-                                                mapOf(
-                                                    "id" to JsonPrimitive(state.orderId),
-                                                    "productId" to JsonPrimitive(productId),
-                                                    "basePlanId" to JsonPrimitive(basePlanId),
-                                                    "offerId" to JsonPrimitive(offerId),
-                                                    "purchaseDate" to JsonPrimitive(
-                                                        DateTimeFormatUtils.format(
-                                                            Calendar.getInstance().apply {
-                                                                timeInMillis =
-                                                                    state.purchaseTimestamp
-                                                            })
-                                                    ),
-                                                    "verified" to JsonPrimitive(state.verified)
-                                                )
-                                            )
-                                        )
-                                    )
-
-                                }
-
-                                is BillingLaunchState.Failed -> {
-                                    JsonObject(
-                                        mapOf(
-                                            "outcome" to JsonPrimitive("cancelled"),
-                                        )
-                                    )
-                                }
-
-                                is BillingLaunchState.Launching -> {
-                                    null
-                                }
-
-                                is BillingLaunchState.Showing -> {
-                                    // ask to buy
-                                   null
-                                }
-                            }
-                            result?.let { resultToSend ->
-                                sendMessageToWebView(
-                                    requestId, resultToSend
-                                )
-                            }
-
-                        }
-                    }
-                }
-        }
-
-    }
-
-    override fun onGetProductPrice(
-        requestId: String, productId: String, basePlanId: String, offerId: String?
-    ) {
-        super.onGetProductPrice(requestId, productId, basePlanId, offerId)
-        viewModel.viewModelScope.launch(Dispatchers.IO) {
-            val productPrice = viewModel.getProductPrice(productId, basePlanId, offerId)
+            val productPrice = viewModel.getProductPrice(request.productId, request.basePlanId, request.offerId)
             val jsonPayload = JsonUtils.defaultJson.encodeToJsonElement(productPrice)
             withContext(Dispatchers.Main) {
-                if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
-                    sendMessageToWebView(requestId, jsonPayload)
-                }
+                sendMessageToWebView(requestId, jsonPayload)
             }
         }
     }
 
+    /**
+     * Same contract as iOS: any HTTP response (4xx / 5xx included) is a result; only an invalid
+     * path or a transport failure is an error. `shouldRetry` requests are persisted and
+     * acknowledged right away with `{ queued: true }`.
+     */
     override fun onDoApiFetch(requestId: String, payload: APIFetchRequest) {
-        super.onDoApiFetch(requestId, payload)
-        CoroutineScope(Dispatchers.IO).launch {
-            val response = viewModel.doApiFetch(payload)
-            if (response is ServiceResult.Success<APIFetchResult>) {
-                val jsonPayload = JsonUtils.defaultJson.encodeToJsonElement(response.value)
-                withContext(Dispatchers.Main) {
-                    if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
-                        sendMessageToWebView(requestId, jsonPayload)
-                    }
-                }
-            } else {
-                logger.error {
-                    "API fetch failed: ${response::class.simpleName}"
-                }
-            }
-
-        }
-    }
-
-    @OptIn(InternalSerializationApi::class)
-    override fun onShowAlert(requestId: String, option: ShowAlertOptions) {
-        super.onShowAlert(requestId, option)
-        lifecycleScope.launch(Dispatchers.Main) {
-            if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
-                showAlertDialog(requestId, option)
-            }
-        }
-    }
-
-    @OptIn(InternalSerializationApi::class)
-    private fun showAlertDialog(requestId: String, option: ShowAlertOptions) {
-        val builder = androidx.appcompat.app.AlertDialog.Builder(this).setTitle(option.title)
-            .setMessage(option.message).setCancelable(false)
-
-        option.actions.take(3).forEach { action ->
-            when (action.style) {
-                "default" -> {
-                    builder.setPositiveButton(action.title) { dialog, _ ->
-                        sendMessageToWebView(
-                            requestId, JsonObject(mapOf(
-                                "actionId" to JsonPrimitive(action.id)
-                            ))
-                        )
-                        dialog.dismiss()
-                    }
-                }
-
-                "cancel" -> {
-                    builder.setNegativeButton(action.title) { dialog, _ ->
-                        sendMessageToWebView(
-                            requestId, JsonObject(mapOf(
-                                "actionId" to JsonPrimitive(action.id)
-                            ))
-                        )
-                        dialog.dismiss()
-                    }
-                }
-
-                "destructive" -> {
-                    builder.setNeutralButton(action.title) { dialog, _ ->
-                        sendMessageToWebView(
-                            requestId, JsonObject(mapOf(
-                                "actionId" to JsonPrimitive(action.id)
-                            ))
-                        )
-                        dialog.dismiss()
-                    }
-                }
-            }
-
-        }
-
-        builder.setNegativeButton("Cancel") { dialog, _ ->
-            sendMessageToWebView(
-                requestId, JsonObject(mapOf(
-                    "actionId" to JsonNull
-                ))
+        if (!Galva.instance.iamService.isValidPath(payload.path)) {
+            sendErrorToWebView(
+                requestId,
+                BridgeError(BridgeError.Code.INVALID_PAYLOAD, "apiFetch path is invalid or targets a disallowed origin"),
             )
-            dialog.dismiss()
+            return
+        }
+        viewModel.viewModelScope.launch(Dispatchers.IO) {
+            if (payload.shouldRetry) {
+                val queued = runCatching { Galva.instance.apiFetchQueue.enqueue(payload) }
+                    .onFailure { logger.error(it) { "apiFetch: could not persist request" } }
+                    .isSuccess
+                withContext(Dispatchers.Main) {
+                    if (queued) {
+                        sendMessageToWebView(requestId, buildJsonObject { put("queued", true) })
+                    } else {
+                        sendErrorToWebView(
+                            requestId,
+                            BridgeError(BridgeError.Code.API_REQUEST_FAILED, "Durable request queue unavailable"),
+                        )
+                    }
+                }
+                return@launch
+            }
+            val response = viewModel.doApiFetch(payload)
+            withContext(Dispatchers.Main) {
+                when (response) {
+                    is ServiceResult.Success<APIFetchResult> ->
+                        sendMessageToWebView(requestId, JsonUtils.defaultJson.encodeToJsonElement(response.value))
+
+                    is ServiceResult.Error -> sendErrorToWebView(
+                        requestId,
+                        BridgeError(BridgeError.Code.API_REQUEST_FAILED, "apiFetch transport error: ${response.error.message}"),
+                    )
+
+                    is ServiceResult.Failure -> sendErrorToWebView(
+                        requestId,
+                        BridgeError(BridgeError.Code.API_REQUEST_FAILED, "apiFetch failed: HTTP ${response.status}"),
+                    )
+
+                    is ServiceResult.UnknownError -> sendErrorToWebView(
+                        requestId,
+                        BridgeError(BridgeError.Code.API_REQUEST_FAILED, "apiFetch failed: ${response.exception.message}"),
+                    )
+                }
+            }
+        }
+    }
+
+    override fun onShowAlert(requestId: String, option: ShowAlertOptions) {
+        lifecycleScope.launch(Dispatchers.Main) {
+            showAlertDialog(requestId, option)
+        }
+    }
+
+    /**
+     * Resolves with `{ actionId }` of the tapped action. The cancel action takes the negative
+     * button; the others fill the positive, neutral and (when free) negative slots in order. An
+     * alert that closes without an action answers `noActiveMessage`, like iOS.
+     */
+    private fun showAlertDialog(requestId: String, options: ShowAlertOptions) {
+        var answered = false
+        fun answer(actionId: String) {
+            if (answered) return
+            answered = true
+            sendMessageToWebView(requestId, buildJsonObject { put("actionId", JsonPrimitive(actionId)) })
         }
 
-        builder.show()
+        val builder = AlertDialog.Builder(this).setCancelable(false)
+        options.title?.let { builder.setTitle(it) }
+        options.message?.let { builder.setMessage(it) }
+
+        val slots = mutableListOf<(CharSequence, DialogInterface.OnClickListener) -> Unit>(
+            { title, listener -> builder.setPositiveButton(title, listener) },
+            { title, listener -> builder.setNeutralButton(title, listener) },
+            { title, listener -> builder.setNegativeButton(title, listener) },
+        )
+        options.actions.firstOrNull { it.style == AlertAction.Style.CANCEL }?.let { cancel ->
+            val negative = slots.removeAt(slots.lastIndex)
+            negative(cancel.title, DialogInterface.OnClickListener { _, _ -> answer(cancel.id) })
+        }
+        options.actions.filter { it.style != AlertAction.Style.CANCEL }.forEachIndexed { index, action ->
+            slots[index](action.title, DialogInterface.OnClickListener { _, _ -> answer(action.id) })
+        }
+
+        builder.setOnDismissListener {
+            alertDialog = null
+            if (!answered) {
+                answered = true
+                sendErrorToWebView(
+                    requestId,
+                    BridgeError(BridgeError.Code.NO_ACTIVE_MESSAGE, "Alert was dismissed before any action was tapped"),
+                )
+            }
+        }
+        alertDialog = builder.show()
     }
 }

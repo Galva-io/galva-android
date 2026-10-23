@@ -1,10 +1,12 @@
 package io.galva.network.request.messages
 
+import io.galva.common.InternalGalvaApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
 @SerialName("delete-communication-endpoint")
+@InternalGalvaApi
 data class DeleteCommunicationEndpointMessage(
     val endpoint: EndpointNotification,
     val timestamp: String,

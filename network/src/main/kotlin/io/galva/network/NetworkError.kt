@@ -1,5 +1,8 @@
 package io.galva.network
 
+import io.galva.common.InternalGalvaApi
+
+@InternalGalvaApi
 sealed class NetworkError(message: String, cause: Throwable? = null) : RuntimeException(message, cause) {
 
     class Timeout(cause: Throwable? = null) : NetworkError("Request timed out", cause)

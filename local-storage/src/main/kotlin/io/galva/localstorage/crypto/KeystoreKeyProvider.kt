@@ -1,5 +1,6 @@
 package io.galva.localstorage.crypto
 
+import io.galva.common.InternalGalvaApi
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import io.galva.localstorage.core.KeyProvider
@@ -7,6 +8,7 @@ import java.security.KeyStore
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 
+@InternalGalvaApi
 class KeystoreKeyProvider(private val alias: String) : KeyProvider {
 
     private val keystore: KeyStore = KeyStore.getInstance(PROVIDER).apply { load(null) }

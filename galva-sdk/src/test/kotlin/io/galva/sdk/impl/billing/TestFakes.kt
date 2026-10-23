@@ -62,7 +62,7 @@ internal class FakeCatalogStore(
 
     override suspend fun getOfferForPlan(
         basePlanId: String,
-        offerId: String
+        offerId: String?
     ): Offer? {
         return _state.value.products.flatMap { it.basePlans }
             .firstOrNull { it.basePlan.id == basePlanId }?.offers

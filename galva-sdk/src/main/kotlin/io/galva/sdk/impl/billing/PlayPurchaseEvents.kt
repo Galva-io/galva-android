@@ -6,7 +6,7 @@ import com.android.billingclient.api.PurchasesUpdatedListener
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 
-class PlayPurchaseEvents: PurchasesUpdatedListener {
+internal class PlayPurchaseEvents: PurchasesUpdatedListener {
 
     data class Event(val result: BillingResult, val purchases: List<Purchase>?)
     private val subscribers = java.util.concurrent.CopyOnWriteArrayList<Channel<Event>>()

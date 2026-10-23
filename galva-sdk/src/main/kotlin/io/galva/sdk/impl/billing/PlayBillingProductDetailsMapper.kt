@@ -12,11 +12,11 @@ import io.galva.billing.model.ProductCatalog
 import io.galva.billing.model.ProductType
 import io.galva.billing.model.RecurrenceMode
 
-interface ProductDetailsMapper {
+internal interface ProductDetailsMapper {
     fun map(details: List<ProductDetails>): FullCatalog
 }
 
-class PlayBillingProductDetailsMapper :ProductDetailsMapper{
+internal class PlayBillingProductDetailsMapper :ProductDetailsMapper{
 
     override  fun map(details: List<ProductDetails>): FullCatalog =
         FullCatalog(

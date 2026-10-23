@@ -1,11 +1,13 @@
 package io.galva.common.utils
 
+import io.galva.common.InternalGalvaApi
 import android.annotation.SuppressLint
 import android.content.Context
 import android.os.Build
 import android.provider.Settings
 import android.telephony.TelephonyManager
 
+@InternalGalvaApi
 object DeviceUtils {
     @JvmStatic
     fun loadDeviceData(context: Context): DeviceData {
@@ -78,6 +80,7 @@ object DeviceUtils {
     }
 }
 
+@InternalGalvaApi
 data class DeviceData(
     val id: String,
     val manufacturer: String,

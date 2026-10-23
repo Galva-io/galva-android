@@ -308,26 +308,15 @@ class DefaultOperationQueueTest {
     }
 
     @Test
-    fun `operation is dropped once it reaches the retry limit`() = runTest {
-        val c = QueueContainer(this).apply { repeat(5) { sender.queueFailure() } }
-        val q = DefaultOperationQueue(
-            store = c.store,
-            sender = c.sender,
-            gate = StreamNetworkGate(c.network),
-            batchPolicy = SizeOrTimeoutBatchPolicy(10, 100.milliseconds),
-            retryPolicy = c.retry,
-            clock = c.clock,
-            idGen = { "gen" },
-            transitionTrigger = OfflineToOnlineTrigger(c.network),
-            scope = backgroundScope,
-            maxRetryCount = 3,
-        ).also { it.start() }
+    fun `transient failures are retried until delivered without a retry limit`() = runTest {
+        val c = QueueContainer(this).apply { repeat(50) { sender.queueFailure() } }
+        val q = c.build(flushTimeout = 100.milliseconds).also { it.start() }
 
-        q.enqueue(payload = "always-500", type = "default", id = "op")
+        q.enqueue(payload = "flaky", type = "default", id = "op")
         advanceTimeBy(150.milliseconds)
         runCurrent()
 
-        assertEquals(3, c.sender.batches.size)
+        assertEquals(51, c.sender.batches.size)
         assertEquals(0, c.store.rowCount())
         q.stop()
     }
@@ -351,6 +340,33 @@ class DefaultOperationQueueTest {
 
         assertEquals(listOf(1, 2, 3), attempts)
         assertEquals(0, c.store.rowCount())
+        q.stop()
+    }
+
+    @Test
+    fun `maxStoredCount drops the oldest operations`() = runTest {
+        val c = QueueContainer(this).apply { network.setOnline(false) }
+        var nextId = 0
+        val q = DefaultOperationQueue(
+            store = c.store,
+            sender = c.sender,
+            gate = StreamNetworkGate(c.network),
+            batchPolicy = SizeOrTimeoutBatchPolicy(10, 1.seconds),
+            retryPolicy = c.retry,
+            clock = c.clock,
+            idGen = { "gen-${nextId++}" },
+            transitionTrigger = OfflineToOnlineTrigger(c.network),
+            scope = backgroundScope,
+            maxStoredCount = 2,
+        ).also { it.start() }
+
+        q.enqueue(payload = "1", type = "default", id = "1")
+        advanceTimeBy(10.milliseconds)
+        q.enqueue(payload = "2", type = "default", id = "2")
+        advanceTimeBy(10.milliseconds)
+        q.enqueue(payload = "3", type = "default", id = "3")
+
+        assertEquals(listOf("2", "3"), c.store.ids())
         q.stop()
     }
 

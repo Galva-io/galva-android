@@ -17,9 +17,11 @@ Add the SDK, identify your users and render the in-app messages Galva sends; Gal
 
 ## Features
 
-- **Identity** — anonymous install id from the first launch, linked to your user id on `identify()`.
+- **Identity** — anonymous install id from the first launch, linked to your user id on `identify()`; emails are validated on the device.
+- **Sessions** — automatic `session_start` with the same 30-minute rule as iOS.
+- **Privacy** — `setOptOut()` stops server-bound tracking and purges pending events.
 - **User properties** — typed built-in traits plus free-form custom properties.
-- **In-app messages** — server-driven, WebView-based messages with a cached bundle and purchases from inside the message.
+- **In-app messages** — server-driven, WebView-based messages with a cached bundle and purchases from inside the message; one-line automatic display.
 - **Deep links** — open a targeted message from an email or push; links that arrive before sign-in are replayed after `identify()`.
 - **Push notifications** — FCM token registration, rendering and tap / dismiss tracking for Galva notifications.
 - **Billing** — Play Billing integration with an offline-cached product catalog.
@@ -84,7 +86,7 @@ Galva.instance.updateProperties(ProfileProperty.Custom("plan_tier", "pro"))
 Galva.instance.logout()
 ```
 
-**4. Render in-app messages** from your main activity:
+**4. Render in-app messages** — either add `autoDisplayInAppMessages = true` to the `Configuration` above, or collect them yourself from your main activity:
 
 ```kotlin
 lifecycleScope.launch {
@@ -117,6 +119,7 @@ All calls go through `Galva.instance` (`io.galva.sdk.Galva`).
 ```kotlin
 // Setup
 Galva.configure(context, configuration)          // static, once, from Application.onCreate()
+Galva.sdkVersion: String
 
 // Identity
 fun identify(userId: String, email: String? = null, obfuscatedAccountId: String? = null)
@@ -126,12 +129,17 @@ val currentUserId: String          // userId, or the anonymous id
 val isAnonymous: Boolean
 val obfuscatedAccountId: String
 
+// Privacy
+fun setOptOut(optedOut: Boolean)
+val isOptedOut: Boolean
+
 // In-app messages
 fun getInAppMessage(): Flow<Message>
 fun showMessage(activity: Activity, message: Message)
+fun checkForMessages()             // poll now, outside the foreground cadence
 
 // Deep links
-fun handleOpenURL(uri: Uri)
+fun handleOpenURL(uri: Uri): Boolean        // true when it is a Galva link
 
 // Push (FCM)
 fun setPushToken(token: String)
@@ -145,7 +153,10 @@ val billingManager: BillingManager
 // Logging
 fun setLogLevel(level: LogLevel)
 fun setEnableLogging(enabled: Boolean)
+fun setLogger(sink: LogSink)
 ```
+
+This is the whole public API (plus `Configuration`, `Environment`, `ProfileProperty`, `LogLevel`, `LogSink`, `Message`, `WorkflowType` and the billing models). Everything else in the SDK's modules is marked `@InternalGalvaApi` and does not compile when used from an app.
 
 ---
 
@@ -183,6 +194,10 @@ Apps depend only on `io.galva.sdk:galva-sdk`; the other modules are published as
 
 ---
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup, conventions and release process.
+
 ## Support
 
 - 🐛 [Report a bug](https://github.com/Galva-io/galva-android/issues)
@@ -190,4 +205,4 @@ Apps depend only on `io.galva.sdk:galva-sdk`; the other modules are published as
 
 ## License
 
-Licensed under the Apache License, Version 2.0 (as declared in the published POM).
+MIT — see [LICENSE](LICENSE).

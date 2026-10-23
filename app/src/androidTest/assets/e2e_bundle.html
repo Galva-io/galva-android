@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Galva E2E Bundle</title>
+  <style>
+    body { font-family: sans-serif; margin: 0; padding: 24px; color: #111; background: #fff; }
+    h1 { font-size: 24px; }
+    p { font-size: 16px; margin: 8px 0; word-break: break-all; }
+    button { display: block; width: 100%; padding: 16px; margin-top: 24px; font-size: 18px; border: 0; border-radius: 10px; background: #1d6cf0; color: #fff; }
+  </style>
+</head>
+<body>
+  <!-- Served by the E2E mock as <webviewUrl><version>.html. Boots through the native bridge, then
+       reports what it saw to the mock with apiFetch so the test can assert on it. -->
+  <h1 id="title">Galva E2E Bundle</h1>
+  <p id="status">booting</p>
+  <p id="deepLink">deepLink: -</p>
+  <p id="apiFetch">apiFetch: -</p>
+  <button id="close" onclick="closeMessage()">Close E2E</button>
+
+  <script>
+    var pending = {};
+    var seq = 0;
+
+    function call(name, payload) {
+      return new Promise(function (resolve, reject) {
+        var requestId = 'e2e-' + (++seq);
+        pending[requestId] = { resolve: resolve, reject: reject };
+        galva.postMessage(JSON.stringify({ name: name, requestId: requestId, payload: payload || {} }));
+      });
+    }
+
+    // Android passes the envelope as an object literal; accept a JSON string as well.
+    window.handleNativeMessage = function (message) {
+      var res = typeof message === 'string' ? JSON.parse(message) : message;
+      var callbacks = pending[res.requestId];
+      if (!callbacks) { return; }
+      delete pending[res.requestId];
+      if (res.error) { callbacks.reject(res.error); } else { callbacks.resolve(res.result); }
+    };
+
+    function setText(id, text) { document.getElementById(id).textContent = text; }
+
+    async function boot() {
+      var report = { steps: [] };
+      try { await call('ready'); report.steps.push('ready'); }
+      catch (e) { report.readyError = e; }
+
+      try {
+        var data = await call('getMessageData');
+        // Android answers getMessageData with the payload serialized as a JSON string.
+        if (typeof data === 'string') { data = JSON.parse(data); }
+        report.messageData = data;
+        report.steps.push('getMessageData');
+        if (data && data.title) { setText('title', data.title); }
+      } catch (e) { report.messageDataError = e; }
+
+      try {
+        var context = await call('getPageContext');
+        report.platform = context && context.platform;
+        report.steps.push('getPageContext');
+      } catch (e) { report.pageContextError = e; }
+
+      report.deepLinkParams = window.galvaDeepLinkParams || null;
+      setText('deepLink', 'deepLink: ' + JSON.stringify(report.deepLinkParams));
+
+      try {
+        var res = await call('apiFetch', { path: '/e2e/report', method: 'POST', body: report });
+        setText('apiFetch', res && res.ok ? 'apiFetch ok' : 'apiFetch status ' + (res && res.status));
+      } catch (e) { setText('apiFetch', 'apiFetch error ' + JSON.stringify(e)); }
+      setText('status', 'booted');
+    }
+
+    function closeMessage() { call('dismiss', { reason: 'e2e-close' }); }
+
+    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', boot); } else { boot(); }
+  </script>
+</body>
+</html>

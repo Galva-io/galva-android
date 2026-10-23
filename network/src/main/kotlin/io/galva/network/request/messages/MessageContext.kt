@@ -1,10 +1,12 @@
 package io.galva.network.request.messages
 
+import io.galva.common.InternalGalvaApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 
 @Serializable
+@InternalGalvaApi
 data class MessageContext(
     val app: App? = null,
     val device: Device? = null,
@@ -22,6 +24,7 @@ data class MessageContext(
 )
 
 @Serializable
+@InternalGalvaApi
 data class Referrer(
     val id: String, val link: String, val name: String, @SerialName("type") val refererType: String, val url: String
 ) {
@@ -29,11 +32,13 @@ data class Referrer(
 }
 
 @Serializable
+@InternalGalvaApi
 data class App(
     val build: String, val name: String, val namespace: String, val version: String
 )
 
 @Serializable
+@InternalGalvaApi
 data class Device(
     val adTrackingEnabled: Boolean,
     val advertisingId: String?,
@@ -48,11 +53,13 @@ data class Device(
 )
 
 @Serializable
+@InternalGalvaApi
 data class Library(
     val name: String, val version: String
 )
 
 @Serializable
+@InternalGalvaApi
 data class Network(
     val bluetooth: Boolean,
     val carrier: String,
@@ -63,17 +70,21 @@ data class Network(
     )
 
 @Serializable
+@InternalGalvaApi
 data class OS(val name: String, val version: String)
 
 @Serializable
+@InternalGalvaApi
 data class Page(
     val path: String, val referrer: String, val search: String, val title: String, val url: String
 )
 
 @Serializable
+@InternalGalvaApi
 data class Screen(val density: Int, val height: Int, val width: Int)
 
 @Serializable
+@InternalGalvaApi
 data class UserAgentData(
     val bitness: String,
     val brands: List<Brand>,
@@ -85,9 +96,11 @@ data class UserAgentData(
 )
 
 @Serializable
+@InternalGalvaApi
 data class Brand(val brand: String, val version: String)
 
 @Serializable
+@InternalGalvaApi
 enum class SourceType {
     @SerialName("profile")
     Profile,

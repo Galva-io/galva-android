@@ -1,12 +1,17 @@
 package io.galva.operation_queue.local
 
+import io.galva.common.InternalGalvaApi
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 
-class OperationsSqliteHelper(context: Context) : SQLiteOpenHelper(
+@InternalGalvaApi
+class OperationsSqliteHelper(
+    context: Context,
+    dbName: String = DB_NAME,
+) : SQLiteOpenHelper(
     context.applicationContext,
-    DB_NAME,
+    dbName,
     null,
     DB_VERSION,
 ) {

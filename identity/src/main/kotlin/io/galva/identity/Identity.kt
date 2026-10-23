@@ -1,10 +1,12 @@
 package io.galva.identity
 
+import io.galva.common.InternalGalvaApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 
 @Serializable
+@InternalGalvaApi
 data class Identity @JvmOverloads constructor(
     val anonymousId: String,
     val obfuscatedAccountId: String,

@@ -16,7 +16,7 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
-class PlayBillingConnection(
+internal class PlayBillingConnection(
     private val billingClient: BillingClient,
     private val logger: Logger,
     private val connectTimeout: Duration = 5.seconds,

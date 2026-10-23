@@ -1,0 +1,130 @@
+package io.galva.sample.e2e
+
+import android.widget.CompoundButton
+import android.widget.TextView
+import androidx.test.core.app.ActivityScenario
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import io.galva.sample.MainActivity
+import io.galva.sample.R
+import io.galva.sdk.Galva
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+class IdentityE2ETest {
+
+    @After
+    fun optBackIn() = Galva.instance.setOptOut(false)
+
+    @Test
+    fun firstForeground_sendsSessionStart() {
+        ActivityScenario.launch(MainActivity::class.java).use {
+            val event = MockBackend.awaitBatchMessage("session_start track event") {
+                it.optString("type") == "track" && it.optString("event") == "session_start"
+            }
+            val properties = event.getJSONObject("properties")
+            assertEquals(Galva.sdkVersion, properties.getString("sdk_version"))
+            assertTrue("os_version missing: $properties", properties.has("os_version"))
+            assertTrue("anonymousId missing: $event", event.optString("anonymousId").isNotEmpty())
+        }
+    }
+
+    @Test
+    fun identify_fromControlPanel_uploadsIdentifyWithEndUserId() {
+        val userId = uniqueId("user")
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            ControlPanel.identify(userId)
+
+            val message = MockBackend.awaitBatchMessage("identify of $userId") { it.isIdentifyOf(userId) }
+            assertTrue("anonymousId missing: $message", message.optString("anonymousId").isNotEmpty())
+            assertNotNull("context missing: $message", message.optJSONObject("context"))
+
+            val upload = MockBackend.recordedRequests().first {
+                it.path == MockBackend.BATCH_COLLECT && it.body.contains(userId)
+            }
+            assertEquals(MockBackend.API_KEY, upload.header("X-API-Key"))
+            assertEquals("android/${Galva.sdkVersion}", upload.header("x-sdk-version"))
+
+            awaitCondition("SDK to report $userId as the current user") { Galva.instance.currentUserId == userId }
+            assertFalse(Galva.instance.isAnonymous)
+            awaitCondition("control panel to show $userId") {
+                var text = ""
+                scenario.onActivity { text = it.findViewById<TextView>(R.id.status).text.toString() }
+                text.contains(userId)
+            }
+        }
+    }
+
+    @Test
+    fun setEmail_fromControlPanel_uploadsEmailTrait() {
+        val email = "${uniqueId("e2e")}@example.com"
+        ActivityScenario.launch(MainActivity::class.java).use {
+            ControlPanel.setEmail(email)
+
+            MockBackend.awaitBatchMessage("identify with \$gv_email $email") {
+                it.optString("type") == "identify" && it.optJSONObject("traits")?.optString("\$gv_email") == email
+            }
+        }
+    }
+
+    @Test
+    fun optOut_dropsIdentify_untilOptedBackIn() {
+        val optedOutUser = uniqueId("opted-out")
+        val sentinelUser = uniqueId("sentinel")
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            // Opting out purges undelivered events; get earlier tests' events out first.
+            drainSdkQueue()
+
+            ControlPanel.toggleOptOut()
+            assertTrue("switch should opt out", Galva.instance.isOptedOut)
+            awaitCondition("opt-out switch to show the opted-out state") {
+                var checked = false
+                scenario.onActivity { checked = it.findViewById<CompoundButton>(R.id.opt_out_switch).isChecked }
+                checked
+            }
+
+            val userBefore = Galva.instance.currentUserId
+            ControlPanel.identify(optedOutUser)
+            // Calls run in order: once the logout after it took effect, the identify was handled (and
+            // dropped) while opted out. Toggling back immediately is covered by the next test.
+            ControlPanel.logout()
+            awaitCondition("logout to be processed") {
+                Galva.instance.isAnonymous && Galva.instance.currentUserId != userBefore
+            }
+
+            ControlPanel.toggleOptOut()
+            assertFalse("switch should opt back in", Galva.instance.isOptedOut)
+            ControlPanel.identify(sentinelUser)
+            MockBackend.awaitBatchMessage("identify of $sentinelUser after opting back in") { it.isIdentifyOf(sentinelUser) }
+
+            // FIFO queue: anything recorded before the sentinel has been uploaded by now.
+            val leaked = MockBackend.batchMessages().filter { it.isIdentifyOf(optedOutUser) }
+            assertTrue("identify sent while opted out: $leaked", leaked.isEmpty())
+        }
+    }
+
+    @Test
+    fun optOut_appliesInCallOrder_evenWhenToggledBackImmediately() {
+        val optedOutUser = uniqueId("opted-out-fast")
+        val sentinelUser = uniqueId("sentinel-fast")
+        ActivityScenario.launch(MainActivity::class.java).use {
+            drainSdkQueue()
+
+            // No barrier: the identify made while opted out must be dropped even though opt-out is
+            // lifted before the SDK queue gets to it.
+            Galva.instance.setOptOut(true)
+            Galva.instance.identify(optedOutUser)
+            Galva.instance.setOptOut(false)
+            Galva.instance.identify(sentinelUser)
+            MockBackend.awaitBatchMessage("identify of $sentinelUser after opting back in") { it.isIdentifyOf(sentinelUser) }
+
+            val leaked = MockBackend.batchMessages().filter { it.isIdentifyOf(optedOutUser) }
+            assertTrue("identify sent while opted out: $leaked", leaked.isEmpty())
+        }
+    }
+}

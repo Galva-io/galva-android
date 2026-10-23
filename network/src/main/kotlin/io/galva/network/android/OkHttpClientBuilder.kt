@@ -1,9 +1,11 @@
 package io.galva.network.android
 
+import io.galva.common.InternalGalvaApi
 import io.galva.common.logger.Logger
 import io.galva.common.logger.NoOpLogger
 import io.galva.network.HttpClient
 
+@InternalGalvaApi
 class OkHttpClientBuilder {
     private var apiKey: String = ""
     private var sdkVersion: String = "kotlin/1.0.0"

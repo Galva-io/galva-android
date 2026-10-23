@@ -1,52 +1,40 @@
 package io.galva.iam.bridge
 
+import io.galva.common.InternalGalvaApi
 import android.webkit.JavascriptInterface
-import android.webkit.WebView
 import io.galva.common.logger.Logger
 import io.galva.common.logger.NoOpLogger
 import io.galva.common.utils.JsonUtils
 import io.galva.network.request.APIFetchRequest
-import kotlinx.serialization.InternalSerializationApi
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 
+@InternalGalvaApi
 interface JSBridgeCallback {
     fun onReady(requestId: String)
     fun onDismiss(requestId: String)
     fun onGetPageContext(requestId: String)
     fun onGetMessageData(requestId: String)
-    fun onRequestPurchase(requestId: String, productId: String,basePlanId:String, offerId: String)
+    fun onRequestPurchase(requestId: String, request: PurchaseRequest)
     fun onOpenManageSubscription(requestId: String, url: String)
     fun onOpenDeepLink(requestId: String, url: String)
-    fun onGetProductPrice(
-        requestId: String, productId: String, basePlanId: String, offerId: String?
-    )
-
+    fun onGetProductPrice(requestId: String, request: ProductPriceRequest)
     fun onDoApiFetch(requestId: String, payload: APIFetchRequest)
+    fun onShowAlert(requestId: String, option: ShowAlertOptions)
 
-    @OptIn(InternalSerializationApi::class)
-    fun onShowAlert(requestId: String, option:ShowAlertOptions)
-
+    /** Answer [requestId] with an error envelope instead of a result. */
+    fun onBridgeError(requestId: String, error: BridgeError)
 }
-@InternalSerializationApi @Serializable
-data class ShowAlertOptions(
-    val title: String, val message: String, val actions: List<AlertAction> = emptyList()
-)
 
-@InternalSerializationApi
-@Serializable
-data class AlertAction(
-    val id: String, val title: String, val style: String
-)
-
+/**
+ * Receives `galva.postMessage(json)` calls from the in-app message bundle. Every envelope that
+ * carries a `requestId` gets an answer — a result from the callback or a [BridgeError] — so the
+ * bundle's Promise never hangs. Only an envelope that cannot be decoded at all (no `requestId` to
+ * answer) is dropped, as in the iOS SDK.
+ */
+@InternalGalvaApi
 class JSBridge(
     val callback: JSBridgeCallback,
     private val logger: Logger = NoOpLogger,
 ) {
-    @OptIn(InternalSerializationApi::class)
     @JavascriptInterface
     fun postMessage(message: String) {
         // Payloads can contain personal data, so they are only logged at VERBOSE.
@@ -56,82 +44,53 @@ class JSBridge(
         }.onFailure {
             logger.warn(it) { "Bridge: failed to decode envelope" }
         }.getOrNull() ?: return
+        val requestId = parsedMessage.requestId
         val method = BridgeMethod.entries.firstOrNull {
             it.methodName == parsedMessage.name
-        } ?: run {
+        }
+        if (method == null) {
             logger.warn { "Bridge: unknown method ${parsedMessage.name}" }
+            callback.onBridgeError(
+                requestId,
+                BridgeError(BridgeError.Code.UNKNOWN_METHOD, "Unknown bridge method: ${parsedMessage.name}"),
+            )
             return
         }
-        logger.debug { "Bridge in: ${method.methodName} (${parsedMessage.requestId})" }
-        when (method) {
-            BridgeMethod.Ready -> {
+        logger.debug { "Bridge in: ${method.methodName} ($requestId)" }
+        val payload = parsedMessage.payload
+        try {
+            when (method) {
+                BridgeMethod.Ready -> callback.onReady(requestId)
+                BridgeMethod.Dismiss -> callback.onDismiss(requestId)
+                BridgeMethod.GetPageContext -> callback.onGetPageContext(requestId)
+                BridgeMethod.GetMessageData -> callback.onGetMessageData(requestId)
+                BridgeMethod.RequestPurchase ->
+                    callback.onRequestPurchase(requestId, BridgeRequests.parsePurchase(payload))
 
-            }
+                BridgeMethod.OpenManageSubscription ->
+                    callback.onOpenManageSubscription(requestId, BridgeRequests.parseUrl(payload))
 
-            BridgeMethod.Dismiss -> {
-                callback.onDismiss(parsedMessage.requestId)
-            }
+                BridgeMethod.OpenDeepLink ->
+                    callback.onOpenDeepLink(requestId, BridgeRequests.parseUrl(payload))
 
-            BridgeMethod.GetPageContext -> {
-                callback.onGetPageContext(parsedMessage.requestId)
-            }
+                BridgeMethod.GetProductPrice ->
+                    callback.onGetProductPrice(requestId, BridgeRequests.parseProductPrice(payload))
 
-            BridgeMethod.GetMessageData -> {
-                callback.onGetMessageData(parsedMessage.requestId)
-            }
+                BridgeMethod.DoApiFetch ->
+                    callback.onDoApiFetch(requestId, BridgeRequests.parseApiFetch(payload))
 
-            BridgeMethod.RequestPurchase -> {
-                val payload = runCatching {
-                    parsedMessage.payload
-                }.getOrNull() ?: return
-                val productId = payload["productId"]?.jsonPrimitive?.content ?: return
-                val basePlanId = payload["basePlanId"]?.jsonPrimitive?.content ?: return
-                val offerToken = payload["promotionalOffer"]?.jsonPrimitive?.content ?: return
-                callback.onRequestPurchase(parsedMessage.requestId, productId,basePlanId, offerToken)
+                BridgeMethod.ShowAlert ->
+                    callback.onShowAlert(requestId, BridgeRequests.parseShowAlert(payload))
             }
-
-            BridgeMethod.OpenManageSubscription -> {
-                val url = parsedMessage.payload?.get("url")?.jsonPrimitive?.content ?: return
-                callback.onOpenManageSubscription(parsedMessage.requestId, url)
-            }
-
-            BridgeMethod.OpenDeepLink -> {
-                val url = parsedMessage.payload?.get("url")?.jsonPrimitive?.content ?: return
-                callback.onOpenDeepLink(parsedMessage.requestId, url)
-            }
-
-            BridgeMethod.GetProductPrice -> {
-                val payload = parsedMessage.payload ?: return
-                val productId = payload["productId"]?.jsonPrimitive?.content ?: return
-                val basePlanId = payload["basePlanId"]?.jsonPrimitive?.content ?: return
-                val offerId = payload["offerId"]?.jsonPrimitive?.content
-                callback.onGetProductPrice(parsedMessage.requestId, productId, basePlanId, offerId)
-            }
-
-            BridgeMethod.DoApiFetch -> {
-                val payload = parsedMessage.payload.toString()
-                val apiFetchRequest = runCatching {
-                    JsonUtils.defaultJson.decodeFromString<APIFetchRequest>(payload)
-                }.onFailure {
-                    logger.warn(it) { "Bridge: invalid apiFetch payload" }
-                }.getOrNull() ?: return
-                callback.onDoApiFetch(parsedMessage.requestId, apiFetchRequest)
-            }
-
-            BridgeMethod.ShowAlert -> {
-                val payload = parsedMessage.payload.toString()
-                val options = runCatching {
-                    JsonUtils.defaultJson.decodeFromString<ShowAlertOptions>(payload)
-                }.onFailure {
-                    logger.warn(it) { "Bridge: invalid showAlert payload" }
-                }.getOrNull() ?: return
-                callback.onShowAlert(parsedMessage.requestId, options)
-            }
+        } catch (e: BridgeException) {
+            logger.warn { "Bridge: ${method.methodName} rejected — ${e.error.message}" }
+            callback.onBridgeError(requestId, e.error)
         }
     }
 
 }
 
+@InternalGalvaApi
 enum class BridgeMethod(val methodName: String) {
     Ready("ready"), Dismiss("dismiss"), GetPageContext("getPageContext"), GetMessageData("getMessageData"), RequestPurchase(
         "requestPurchase"

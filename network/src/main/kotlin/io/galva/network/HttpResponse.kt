@@ -1,5 +1,8 @@
 package io.galva.network
 
+import io.galva.common.InternalGalvaApi
+
+@InternalGalvaApi
 data class HttpResponse(
     val status: Int,
     val headers: HttpHeaders,

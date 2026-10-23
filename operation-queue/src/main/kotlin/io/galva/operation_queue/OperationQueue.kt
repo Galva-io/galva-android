@@ -1,5 +1,8 @@
 package io.galva.operation_queue
 
+import io.galva.common.InternalGalvaApi
+
+@InternalGalvaApi
 interface OperationQueue {
     fun start()
 

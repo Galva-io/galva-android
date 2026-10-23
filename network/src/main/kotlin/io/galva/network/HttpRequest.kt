@@ -1,8 +1,10 @@
 package io.galva.network
 
+import io.galva.common.InternalGalvaApi
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
+@InternalGalvaApi
 data class HttpRequest(
     val url: String,
     val method: HttpMethod,

@@ -6,6 +6,8 @@ Everything after [installation](installation.md): identifying users, rendering i
 - [Configuration reference](#configuration-reference)
 - [Identify users](#identify-users)
 - [User properties](#user-properties)
+- [Sessions](#sessions)
+- [Privacy and opt-out](#privacy-and-opt-out)
 - [In-app messages](#in-app-messages)
 - [Deep links](#deep-links)
 - [Push notifications](#push-notifications)
@@ -53,11 +55,14 @@ Galva.configure(
 | `apiKey` | `String` | — (required) | Your publishable key from the Galva dashboard. Must not be blank. |
 | `env` | `Environment` | `Environment.Production` | `Environment.Production` (`api.galva.io`), `Environment.Development` (`api.galva.dev`), or `Environment.Custom(apiUrl, webviewUrl)` for proxies / on-prem. Must match the API key. |
 | `logLevel` | `LogLevel` | `LogLevel.WARN` | `NONE`, `ERROR`, `WARN`, `INFO`, `DEBUG`, `VERBOSE`. |
-| `autoTrackSessions` | `Boolean` | `true` | Reserved for automatic session tracking; currently has no effect. |
+| `autoTrackSessions` | `Boolean` | `true` | Sends `session_start` automatically — see [Sessions](#sessions). |
+| `autoDisplayInAppMessages` | `Boolean` | `false` | Shows in-app messages on the visible activity without any code — see [In-app messages](#in-app-messages). |
+| `logSink` | `LogSink?` | `null` (Logcat) | Receives the SDK logs instead of Logcat — see [Logging](#logging). |
 
 Rules:
 
 - Call `configure` **once**, from `Application.onCreate()`, on the **main thread**. Later calls are ignored with a log line.
+- `configure` returns almost immediately: it only records the configuration and registers lifecycle observers; storage, billing and the in-app message pipeline are set up in the background. Calls made in the meantime are queued, and `currentUserId` / `obfuscatedAccountId` are empty until the identity has been loaded.
 - Use one API key per environment; keys are not interchangeable between `Development` and `Production`.
 - The API key is never written to the logs.
 
@@ -73,6 +78,8 @@ Galva.instance.identify("user_42")
 // Optionally with an email address
 Galva.instance.identify("user_42", email = "jane@example.com")
 ```
+
+Email addresses are checked on the device (one `@`, a dotted domain, no spaces) like in the iOS SDK; an invalid address is dropped and logged as a warning, and the rest of the call still applies. The same check applies to `ProfileProperty.Email`.
 
 On sign-out:
 
@@ -123,11 +130,48 @@ The SDK also maintains a few properties for you: time zone, language and country
 
 ---
 
+## Sessions
+
+With `autoTrackSessions = true` (the default) the SDK sends a `session_start` event when the app comes to the foreground and no session was started in the last 30 minutes — the same rule as the iOS SDK. The 30-minute window is measured from the previous `session_start` and survives app restarts; there is no `session_end` event (the backend derives durations). Each event carries `device_locale`, `os_version`, `app_version` and `sdk_version`.
+
+---
+
+## Privacy and opt-out
+
+Give users a switch for server-bound tracking:
+
+```kotlin
+Galva.instance.setOptOut(true)    // stop tracking
+Galva.instance.isOptedOut         // synchronous read, safe on any thread
+```
+
+While opted out, `identify`, `updateProperties`, push-token registration, push interaction events and `session_start` are dropped, and events still waiting to be uploaded are deleted when switching to opted out. In-app messages keep working. The choice is stored on the device and survives restarts; `setOptOut(false)` turns tracking back on.
+
+---
+
 ## In-app messages
 
-Galva checks for a pending message when the app comes to the foreground (and periodically while you are collecting). You decide **where** to render it; the SDK handles fetching the content, downloading and caching the web bundle, the full-screen WebView, and purchases started from the message.
+Galva checks for a pending message at cold start and every time the app returns to the foreground. You decide **where** to render it; the SDK handles fetching the content, downloading and caching the web bundle, the full-screen WebView, and purchases started from the message.
 
-Collect the message stream in **one** place — usually your main / root activity:
+How messages are picked (same rules as the iOS SDK):
+
+- **At most one message per return to the foreground.** The backend returns messages highest-priority first and the SDK publishes the first one it has not published before; the others come up on later returns.
+- **No polling while a message is on screen** or while a message opened from a deep link is loading — a deep link always wins over the foreground check.
+- **A message the user has seen is not shown again** during the same app session, even if the same deep link arrives again.
+
+### Automatic display (one line)
+
+The simplest setup: let the SDK show each message on whatever activity is visible.
+
+```kotlin
+Galva.configure(this, Configuration(apiKey = BuildConfig.GALVA_API_KEY, autoDisplayInAppMessages = true))
+```
+
+A message that arrives while no activity of your app is visible is skipped. Use the manual setup below instead when you need to control *when* messages appear.
+
+### Manual display
+
+Collect the message stream while your UI is visible — usually in your main / root activity:
 
 ```kotlin
 import androidx.lifecycle.Lifecycle
@@ -173,10 +217,29 @@ fun GalvaInAppMessages() {
 
 Call `GalvaInAppMessages()` once near the root of your UI.
 
+### Branching by workflow
+
+Each message says which workflow produced it, so you can gate or log per campaign:
+
+```kotlin
+Galva.instance.getInAppMessage().collect { message ->
+    when (message.workflowType) {
+        WorkflowType.TRIAL_RESCUE -> { /* trial-to-paid nudge */ }
+        WorkflowType.PAYMENT_RECOVERY -> { /* failed renewal */ }
+        WorkflowType.CANCELLATION_RECOVERY, WorkflowType.WINBACK -> { /* churn */ }
+        null -> { /* broadcast / manual send, or a newer workflow type */ }
+    }
+    Galva.instance.showMessage(this@MainActivity, message)
+}
+```
+
+`message.createdAt` holds the time the server queued the message (ISO-8601).
+
 ### Notes
 
 - **Gate it if you need to.** Inside `collect` you can skip or delay `showMessage` (for example during onboarding or checkout). Not collecting at all means nothing is rendered.
-- **Collect once.** Every active collector polls the backend on its own, so do not collect from several screens at the same time.
+- **Collect while your UI is visible.** Checking for messages does not depend on collectors; a message published while nothing is collecting is skipped for the rest of the app session. If your app has several top-level activities, collect in each of them (for example from a base activity) — all collectors receive the same message, and `showMessage` ignores a message that is already being shown.
+- **Check on demand.** Call `Galva.instance.checkForMessages()` after a user action that should trigger a workflow (for example finishing onboarding), instead of waiting for the next return to the foreground.
 - The message is shown in a full-screen activity provided by the SDK; the user closes it from inside the message or with the back button.
 
 ---
@@ -206,27 +269,32 @@ On the activity that should receive the link (usually the launcher activity):
 
 ### 2. Forward the links
 
-Forward both the launch intent and any later intents:
+Forward both the launch intent and any later intents. `handleOpenURL` returns `true` when the URI is a Galva link (scheme starting with `gv`) and `false` otherwise, so you can route your own links after it:
 
 ```kotlin
 override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
-    intent?.data?.let(Galva.instance::handleOpenURL)
+    intent?.data?.let(::routeLink)
 }
 
 override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
-    intent.data?.let(Galva.instance::handleOpenURL)
+    intent.data?.let(::routeLink)
+}
+
+private fun routeLink(uri: Uri) {
+    if (Galva.instance.handleOpenURL(uri)) return   // Galva took it
+    myRouter.open(uri)                               // your own links
 }
 ```
-
-Galva ignores URIs whose scheme does not start with `gv`, so it is safe to forward everything — your own links keep working.
 
 The supported route is:
 
 ```text
 gvYOURSCHEME://openCommunication?communicationId=<id>
 ```
+
+All query parameters of the link are passed to the message page as `window.galvaDeepLinkParams`, so a tap carries its campaign context with it.
 
 **Deferred until identify.** A targeted message can only be opened for a known user. If the link arrives before `identify()` (for example a cold start straight from an email), the SDK keeps the most recent link and opens it automatically right after you call `identify()`.
 
@@ -337,7 +405,17 @@ All output goes to Logcat under the tag **`Galva`**:
 adb logcat -s Galva
 ```
 
-Use `LogLevel.DEBUG` while integrating and `LogLevel.WARN` (the default) or lower in production; `DEBUG` and `VERBOSE` include request URLs and payloads.
+Use `LogLevel.DEBUG` while integrating and `LogLevel.WARN` (the default) or lower in production; `DEBUG` and `VERBOSE` include request URLs and payloads. At `DEBUG` the SDK also forwards the in-app message page's `console.*` output and JavaScript errors, so you can debug a message without attaching Chrome DevTools.
+
+To send the logs to your own pipeline (Crashlytics, a file, …), pass a `LogSink` — in `Configuration(logSink = …)` or later with `setLogger`. The log level still filters what reaches it:
+
+```kotlin
+Galva.instance.setLogger { level, tag, message, throwable ->
+    FirebaseCrashlytics.getInstance().log("[$level] $tag: $message")
+}
+```
+
+For diagnostics screens and support reports, `Galva.sdkVersion` returns the SDK version.
 
 ---
 
@@ -359,13 +437,16 @@ public class MyApp extends Application {
                 true,
                 BuildConfig.DEBUG ? Environment.Development.INSTANCE : Environment.Production.INSTANCE
         );
+        // Shorter forms work too, e.g. new Configuration(BuildConfig.GALVA_API_KEY)
         Galva.configure(this, configuration);
     }
 }
 
-// elsewhere — all parameters must be passed from Java
-Galva.getInstance().identify("user_42", null, null);
+// elsewhere
+Galva.getInstance().identify("user_42");
+Galva.getInstance().identify("user_42", "jane@example.com");
 Galva.getInstance().logout();
+String version = Galva.getSdkVersion();
 ```
 
 Collecting `getInAppMessage()` requires a coroutine; from Java, do it in a small Kotlin helper (for example the `MainActivity` snippet above).
@@ -378,7 +459,8 @@ Collecting `getInAppMessage()` requires a coroutine; from Java, do it in a small
 - [ ] `Galva.configure(...)` in `Application.onCreate()` with an explicit `env`.
 - [ ] API key kept out of source control.
 - [ ] `identify()` after sign-in **and** on every start with a restored session; `logout()` on sign-out.
-- [ ] `getInAppMessage()` collected in exactly one place; `showMessage()` called with an `Activity`.
+- [ ] In-app messages: `autoDisplayInAppMessages = true`, or `getInAppMessage()` collected while your UI is visible with `showMessage()` called with an `Activity`.
 - [ ] `gv…` scheme declared, and `handleOpenURL` called from `onCreate` and `onNewIntent`.
+- [ ] If your app offers a privacy setting, it calls `setOptOut`.
 - [ ] Push: `setPushToken` from `onNewToken` and on start-up, `handlePush` in `onMessageReceived`, `POST_NOTIFICATIONS` requested, notification icon meta-data set.
 - [ ] Release build tested with R8 enabled.

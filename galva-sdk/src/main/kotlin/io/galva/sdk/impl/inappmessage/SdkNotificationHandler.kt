@@ -7,7 +7,7 @@ import android.content.Intent
 import android.os.Build
 import io.galva.common.utils.NotificationUtils
 
-class SdkNotificationHandler(context: Context) {
+internal class SdkNotificationHandler(context: Context) {
     private val context = context.applicationContext
 
     private val notificationManager =

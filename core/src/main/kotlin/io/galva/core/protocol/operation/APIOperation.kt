@@ -1,7 +1,9 @@
 package io.galva.core.protocol.operation
 
+import io.galva.common.InternalGalvaApi
 import kotlinx.serialization.json.JsonObject
 
+@InternalGalvaApi
 sealed class APIOperation {
     open val opType: String = "unknown"
 
@@ -16,6 +18,7 @@ sealed class APIOperation {
         const val CREATE_COMMUNICATION_ENDPOINT_MESSAGE = "CreateCommunicationEndpointMessage"
         const val DELETE_COMMUNICATION_ENDPOINT_MESSAGE = "DeleteCommunicationEndpointMessage"
         const val TRACK_PUSH_NOTIFICATION_MESSAGE = "TrackPushNotification"
+        const val TRACK_MESSAGE = "TrackMessage"
 
     }
 
@@ -52,6 +55,18 @@ sealed class APIOperation {
         override val ownerId: String
             get() = anonymousId
     }
+    data class Track(
+        val anonymousId: String,
+        val userId: String?,
+        val event: String,
+        val properties: JsonObject?,
+    ) : APIOperation() {
+        override val opType: String
+            get() = TRACK_MESSAGE
+        override val ownerId: String
+            get() = anonymousId
+    }
+
     data class TrackPushNotification(val communicationId: String,val eventType: String,val timestamp:String ) : APIOperation() {
         override val opType: String
             get() = TRACK_PUSH_NOTIFICATION_MESSAGE

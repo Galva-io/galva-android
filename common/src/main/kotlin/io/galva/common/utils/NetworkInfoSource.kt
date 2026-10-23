@@ -1,11 +1,13 @@
 package io.galva.common.utils
 
+import io.galva.common.InternalGalvaApi
 import android.annotation.SuppressLint
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.telephony.TelephonyManager
 
+@InternalGalvaApi
 data class Network(
     val bluetooth: Boolean,
     val carrier: String,
@@ -13,6 +15,7 @@ data class Network(
     val wifi: Boolean
 )
 
+@InternalGalvaApi
 object NetworkInfoSource {
     /**
      * Reads the current network state. Requires no permissions on modern Android

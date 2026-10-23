@@ -1,8 +1,10 @@
 package io.galva.billing.store
 
+import io.galva.common.InternalGalvaApi
 import io.galva.billing.model.Offer
 import kotlinx.coroutines.flow.Flow
 
+@InternalGalvaApi
 interface OfferStore {
     fun observeForBasePlan(basePlanId: String): Flow<List<Offer>>
     suspend fun get(offerToken: String): Offer?

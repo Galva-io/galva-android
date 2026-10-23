@@ -4,14 +4,14 @@ import com.android.billingclient.api.Purchase
 import io.galva.billing.model.Entitlement
 import io.galva.billing.model.EntitlementState
 
-interface PurchaseToEntitlementMapper{
+internal interface PurchaseToEntitlementMapper{
     /**
      * Map a Play Billing [Purchase] to an [Entitlement].
      *
      */
     fun map(purchase: Purchase): Entitlement?
 }
-class PlayBillingPurchaseToEntitlementMapper: PurchaseToEntitlementMapper {
+internal class PlayBillingPurchaseToEntitlementMapper: PurchaseToEntitlementMapper {
     override fun map(
         purchase: Purchase,
     ): Entitlement? {

@@ -1,5 +1,6 @@
 package io.galva.common.network
 
+import io.galva.common.InternalGalvaApi
 import kotlinx.coroutines.delay
 import kotlin.random.Random
 import kotlin.time.Duration
@@ -7,6 +8,7 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
+@InternalGalvaApi
 class ExponentialBackoffRetryPolicy(
     private val base: Duration = 1.seconds,
     private val cap: Duration = 5.minutes,

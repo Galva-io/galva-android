@@ -1,9 +1,11 @@
 package io.galva.network.request
 
+import io.galva.common.InternalGalvaApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
+@InternalGalvaApi
 class ListCommunicationRequest(
     val channelType: ChannelType,
     val anonymousId: String,
@@ -14,6 +16,7 @@ class ListCommunicationRequest(
 }
 
 @Serializable
+@InternalGalvaApi
 enum class ChannelType(val id: String) {
     @SerialName("in-app")
     IN_APP_MESSAGE("in-app"),

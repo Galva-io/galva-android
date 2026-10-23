@@ -1,10 +1,12 @@
 package io.galva.network.request.messages
 
+import io.galva.common.InternalGalvaApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
 @SerialName("set-communication-preference")
+@InternalGalvaApi
 data class SetCommunicationPreferenceMessage(
     val channelType: ChannelType,
     val timestamp: String,
@@ -17,6 +19,7 @@ data class SetCommunicationPreferenceMessage(
 ): BatchMessage() {}
 
 @Serializable
+@InternalGalvaApi
 enum class ChannelType{
     @SerialName("email")
     Email,

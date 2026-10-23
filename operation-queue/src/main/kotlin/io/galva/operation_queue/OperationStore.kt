@@ -1,8 +1,10 @@
 package io.galva.operation_queue
 
+import io.galva.common.InternalGalvaApi
 import io.galva.operation_queue.local.StoredOperation
 import kotlinx.coroutines.flow.Flow
 
+@InternalGalvaApi
 interface OperationStore {
     /** Atomic insert; ignores duplicates by id */
     suspend fun insert(op: StoredOperation)
@@ -27,4 +29,7 @@ interface OperationStore {
 
     /** Remove every operation owned by [ownerId], including rows currently claimed by the consumer. */
     suspend fun clearOwnedBy(ownerId: String)
+
+    /** Delete the oldest rows so at most [maxCount] remain; returns how many were deleted. */
+    suspend fun trimToNewest(maxCount: Int): Int
 }

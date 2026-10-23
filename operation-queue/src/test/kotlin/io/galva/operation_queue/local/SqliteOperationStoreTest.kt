@@ -433,6 +433,15 @@ class SqliteOperationStoreTest {
     }
 
     @Test
+    fun `trimToNewest deletes the oldest rows beyond the cap`() = runTest {
+        repeat(5) { store.insert(makeOp("op$it", createdAt = nowMs + it)) }
+
+        assertEquals(2, store.trimToNewest(3))
+        assertEquals(0, store.trimToNewest(3))
+        assertEquals(listOf("op2", "op3", "op4"), store.claimBatch(10, "tok", nowMs).map { it.id })
+    }
+
+    @Test
     fun `upgrade from v1 keeps pending operations`() = runTest {
         helper.close()
         val context = ApplicationProvider.getApplicationContext<Context>()

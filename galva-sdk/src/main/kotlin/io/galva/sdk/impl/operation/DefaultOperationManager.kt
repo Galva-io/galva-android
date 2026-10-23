@@ -23,7 +23,7 @@ import io.galva.operation_queue.local.OperationsSqliteHelper
 import io.galva.operation_queue.local.SqliteOperationStore
 import io.galva.operation_queue.networkgate.StreamNetworkGate
 import io.galva.operation_queue.policy.BatchPolicy
-import io.galva.sdk.impl.adsvertise.GMSAdvertisingProvider
+import io.galva.sdk.impl.advertising.GMSAdvertisingProvider
 import io.galva.sdk.impl.inappmessage.AndroidAppLifecycleObserver
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -40,7 +40,7 @@ import kotlin.time.Duration.Companion.minutes
 import kotlin.uuid.ExperimentalUuidApi
 
 @OptIn(ExperimentalUuidApi::class)
-class DefaultOperationManager internal constructor(
+internal class DefaultOperationManager internal constructor(
     private val lifecycleObserver: AppLifecycleObserver,
     val operationQueue: OperationQueue,
     private val converter: OperationRequestConverter,
@@ -101,6 +101,9 @@ class DefaultOperationManager internal constructor(
     }
 
     companion object {
+        /** Same cap as the iOS SDK: oldest events are dropped when offline long enough to exceed it. */
+        const val MAX_STORED_OPERATIONS = 10_000
+
         fun create(
             context: Context,
             identifyService: IdentifyService,
@@ -134,6 +137,7 @@ class DefaultOperationManager internal constructor(
                 logger = logger,
                 transitionTrigger = OfflineToOnlineTrigger(networkMonitor),
                 scope = queueHandleScope,
+                maxStoredCount = MAX_STORED_OPERATIONS,
             )
             return DefaultOperationManager(
                 lifecycleOwner, operationQueue, requestConverter,

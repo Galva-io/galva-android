@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
-class PlayProductDetailsResolver(
+internal class PlayProductDetailsResolver(
     private val billingClient: BillingClient,
     private val connection: PlayBillingConnection,
     private val logger: Logger,

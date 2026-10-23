@@ -1,8 +1,10 @@
 package io.galva.operation_queue.policy
 
+import io.galva.common.InternalGalvaApi
 import kotlin.time.Duration
 
 /** Decides WHEN to flush. Implementations: SizeOrTimeout, SizeOnly, TimeoutOnly, Adaptive… */
+@InternalGalvaApi
 interface BatchPolicy {
     val maxBatchSize: Int
     val flushTimeout: Duration

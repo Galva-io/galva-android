@@ -1,5 +1,6 @@
 package io.galva.operation_queue.policy
 
+import io.galva.common.InternalGalvaApi
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
@@ -9,6 +10,7 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
+@InternalGalvaApi
 class SizeOrTimeoutBatchPolicy(
     initialMaxBatchSize: Int = 10,
     initialFlushTimeout: Duration = 30.seconds,

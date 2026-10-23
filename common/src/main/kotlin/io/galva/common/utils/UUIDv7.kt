@@ -1,10 +1,12 @@
 package io.galva.common.utils
 
+import io.galva.common.InternalGalvaApi
 import java.security.SecureRandom
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
+@InternalGalvaApi
 object UUIDv7 {
     private val numberGenerator: ThreadLocal<SecureRandom> = ThreadLocal.withInitial { SecureRandom() }
 

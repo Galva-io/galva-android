@@ -1,19 +1,20 @@
 package io.galva.common.utils
 
+import io.galva.common.InternalGalvaApi
+
+/** Detects whether the app ships a Play Billing Library the SDK can use (8.0+). */
+@InternalGalvaApi
 object PlayBillingVersion {
-    val current: Int by lazy { detectVersion() }
+    private const val BILLING_CLIENT = "com.android.billingclient.api.BillingClient"
 
-    fun ensureMinimumVersion(minimum: Int = 8): Boolean {
-        return current >= minimum
-    }
+    /** Introduced in Play Billing Library 8.0 (`queryProductDetailsAsync` result type). */
+    private const val ADDED_IN_8_0 = "com.android.billingclient.api.QueryProductDetailsResult"
 
-    private fun detectVersion(): Int = when {
-        hasClass("com.android.billingclient.api.QueryProductDetailsResult") -> 9
-        // 9.0 added QueryProductDetailsResult; 8.0 returned List<ProductDetails> directly
-        hasClass("com.android.billingclient.api.BillingClient\$BillingResponseCode") -> 8
-        // 8.0 has BillingResponseCode as inner class
-        else -> 7
-    }
+    /** True when any Play Billing Library is on the classpath. */
+    val isPresent: Boolean by lazy { hasClass(BILLING_CLIENT) }
+
+    /** True when the Play Billing Library is 8.0 or newer. */
+    val isSupported: Boolean by lazy { hasClass(ADDED_IN_8_0) }
 
     private fun hasClass(name: String): Boolean = try {
         Class.forName(name); true

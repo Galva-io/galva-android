@@ -1,9 +1,11 @@
 package io.galva.localstorage.core
 
+import io.galva.common.InternalGalvaApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.serializer
 
+@InternalGalvaApi
 interface KeyValueStorage {
     // ── Primitives ───────────────────────────────────────────────────
     suspend fun putString(key: String, value: String?)
@@ -33,11 +35,14 @@ interface KeyValueStorage {
     suspend fun clear()
 }
 
+@InternalGalvaApi
 inline fun <reified T> KeyValueStorage.observeObject(key: String): Flow<T?> =
     observeObject(key, serializer())
 
+@InternalGalvaApi
 suspend inline fun <reified T> KeyValueStorage.putObject(key: String, value: T) =
     putObject(key, value, serializer())
 
+@InternalGalvaApi
 suspend inline fun <reified T> KeyValueStorage.getObject(key: String): T? =
     getObject(key, serializer())

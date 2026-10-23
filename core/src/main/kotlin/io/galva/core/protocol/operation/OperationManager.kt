@@ -1,5 +1,8 @@
 package io.galva.core.protocol.operation
 
+import io.galva.common.InternalGalvaApi
+
+@InternalGalvaApi
 interface OperationManager {
     suspend fun recordOperation(apiOperation: APIOperation)
 

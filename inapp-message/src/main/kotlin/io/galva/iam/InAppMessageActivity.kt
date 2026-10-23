@@ -1,9 +1,14 @@
 package io.galva.iam
 
+import io.galva.common.InternalGalvaApi
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.ApplicationInfo
+import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
+import android.webkit.ConsoleMessage
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -13,27 +18,36 @@ import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.lifecycleScope
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
+import io.galva.common.logger.LogLevel
 import io.galva.common.logger.Logger
 import io.galva.common.logger.NoOpLogger
 import io.galva.common.utils.JsonUtils
+import io.galva.iam.bridge.BridgeError
+import io.galva.iam.bridge.BridgeErrorResponse
 import io.galva.iam.bridge.BridgeResponse
 import io.galva.iam.bridge.BridgeStringResponse
 import io.galva.iam.bridge.JSBridge
 import io.galva.iam.bridge.JSBridgeCallback
-import io.galva.iam.bridge.ShowAlertOptions
-import io.galva.network.request.APIFetchRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.serialization.InternalSerializationApi
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import java.io.File
 
+@InternalGalvaApi
 abstract class InAppMessageActivity : ComponentActivity(), JSBridgeCallback {
 
     abstract fun getPayloadJsonData(): String?
 
     abstract fun getHtmlFilePath(): String
+
+    /** Query parameters of the deep link that opened this message, exposed as `window.galvaDeepLinkParams`. */
+    open fun getDeepLinkParameters(): Map<String, String> = emptyMap()
 
     /** SDK logger; bridge traffic is only logged at DEBUG / VERBOSE. */
     protected open val logger: Logger get() = NoOpLogger
@@ -73,7 +87,8 @@ abstract class InAppMessageActivity : ComponentActivity(), JSBridgeCallback {
                 allowFileAccess = true
                 allowContentAccess = false
             }
-            webViewClient = BundleOnlyWebViewClient(bundleUri)
+            webViewClient = BundleOnlyWebViewClient(bundleUri, deepLinkParamsScript()).also { it.install(this) }
+            webChromeClient = ConsoleForwardingChromeClient()
             addJavascriptInterface(JSBridge(this@InAppMessageActivity, logger), "galva")
 
             loadUrl(bundleUri.toString())
@@ -85,11 +100,50 @@ abstract class InAppMessageActivity : ComponentActivity(), JSBridgeCallback {
      * Allows only the bundle file to load in the WebView, like the iOS SDK. Links inside a
      * message go through the `openDeepLink` / `openManageSubscription` bridge methods instead.
      */
-    private inner class BundleOnlyWebViewClient(private val bundleUri: Uri) : WebViewClient() {
+    private inner class BundleOnlyWebViewClient(
+        private val bundleUri: Uri,
+        private val startScript: String?,
+    ) : WebViewClient() {
+        private var injectOnPageStart = false
+
+        fun install(webView: WebView) {
+            if (startScript == null) return
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+                WebViewCompat.addDocumentStartJavaScript(webView, startScript, setOf("*"))
+            } else {
+                injectOnPageStart = true
+            }
+        }
+
+        override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
+            super.onPageStarted(view, url, favicon)
+            // Fallback for WebViews without document-start scripts: runs as early as possible.
+            if (injectOnPageStart && startScript != null) view.evaluateJavascript(startScript, null)
+        }
+
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
             val target = request.url
             if (target.scheme == "file" && target.path == bundleUri.path) return false
             logger.warn { "In-app message navigation blocked: ${target.scheme}://${target.host.orEmpty()}" }
+            return true
+        }
+    }
+
+    /** `window.galvaDeepLinkParams = {...}` for messages opened from a deep link, like the iOS SDK. */
+    private fun deepLinkParamsScript(): String? {
+        val parameters = getDeepLinkParameters().takeIf { it.isNotEmpty() } ?: return null
+        val json = JsonObject(parameters.mapValues { JsonPrimitive(it.value) })
+        return "window.galvaDeepLinkParams = $json;"
+    }
+
+    /** Forwards the bundle's `console.*` output and uncaught errors to the SDK log at DEBUG. */
+    private inner class ConsoleForwardingChromeClient : WebChromeClient() {
+        override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
+            if (!logger.isLoggable(LogLevel.DEBUG)) return false
+            logger.debug {
+                "WebView console.${consoleMessage.messageLevel().name.lowercase()}: ${consoleMessage.message()} " +
+                    "(${consoleMessage.sourceId()}:${consoleMessage.lineNumber()})"
+            }
             return true
         }
     }
@@ -128,11 +182,14 @@ abstract class InAppMessageActivity : ComponentActivity(), JSBridgeCallback {
         super.onDestroy()
     }
 
-    override fun onReady(requestId: String,) {
+    // Every bridge call is answered — void methods with null — so the bundle's Promise settles.
 
+    override fun onReady(requestId: String) {
+        sendMessageToWebView(requestId, JsonNull)
     }
 
-    override fun onDismiss(requestId: String,) {
+    override fun onDismiss(requestId: String) {
+        sendMessageToWebView(requestId, JsonNull)
         if(lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
             lifecycleScope.launch(Dispatchers.Main) {
                 finish()
@@ -140,47 +197,55 @@ abstract class InAppMessageActivity : ComponentActivity(), JSBridgeCallback {
         }
     }
 
-    override fun onGetPageContext(requestId: String,) {
-
+    override fun onGetMessageData(requestId: String) {
+        val messagePayload = getPayloadJsonData()
+        if (messagePayload == null) {
+            sendErrorToWebView(
+                requestId,
+                BridgeError(BridgeError.Code.MESSAGE_DATA_UNAVAILABLE, "Resolved payload not available"),
+            )
+            return
+        }
+        sendStringMessageToWebView(requestId, messagePayload)
     }
 
-    override fun onGetMessageData(requestId: String,) {
-        val messagePayload = getPayloadJsonData() ?: return
-        sendStringMessageToWebView(requestId,messagePayload)
+    override fun onOpenManageSubscription(requestId: String, url: String) {
+        openLink(requestId, url)
     }
 
-    override fun onRequestPurchase(requestId: String,productId: String,basePlanId:String, offerId: String) {
-
+    override fun onOpenDeepLink(requestId: String, url: String) {
+        openLink(requestId, url)
     }
 
-    override fun onOpenManageSubscription(requestId: String,url: String) {
-        openLink(url)
+    override fun onBridgeError(requestId: String, error: BridgeError) {
+        sendErrorToWebView(requestId, error)
     }
 
-    override fun onOpenDeepLink(requestId: String,url: String) {
-        openLink(url)
-    }
-
-    override fun onGetProductPrice(requestId: String,productId: String,basePlanId:String, offerId: String?) {
-
-    }
-
-    override fun onDoApiFetch(requestId: String, payload: APIFetchRequest) {
-
-    }
-
-    @OptIn(InternalSerializationApi::class)
-    override fun onShowAlert(requestId: String, option: ShowAlertOptions) {
-
-    }
-
-    private fun openLink(url: String) {
+    private fun openLink(requestId: String, url: String) {
         if(lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
             lifecycleScope.launch(Dispatchers.Main) {
-                val intent = Intent(Intent.ACTION_VIEW).apply {
-                    data = Uri.parse(url)
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                    sendMessageToWebView(requestId, JsonPrimitive(true))
+                } catch (_: ActivityNotFoundException) {
+                    logger.warn { "Bridge: no app can open the requested URL" }
+                    sendErrorToWebView(
+                        requestId,
+                        BridgeError(BridgeError.Code.URL_OPEN_FAILED, "URL cannot be opened"),
+                    )
                 }
-                startActivity(intent)
+            }
+        }
+    }
+
+    protected fun sendErrorToWebView(requestId: String, error: BridgeError) {
+        if(lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)){
+            lifecycleScope.launch(Dispatchers.Main){
+                val payload = JsonUtils.defaultJson.encodeToString(
+                    BridgeErrorResponse(requestId = requestId, error = error)
+                )
+                logger.debug { "Bridge out (error): $payload" }
+                webView.evaluateJavascript("window.handleNativeMessage($payload)", null)
             }
         }
     }

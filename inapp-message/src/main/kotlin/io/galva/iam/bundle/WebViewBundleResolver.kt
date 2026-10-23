@@ -1,5 +1,6 @@
 package io.galva.iam.bundle
 
+import io.galva.common.InternalGalvaApi
 import io.galva.common.logger.Logger
 import io.galva.iam.bundle.WebViewBundleResolver.Outcome.Failed
 import io.galva.iam.bundle.WebViewBundleResolver.Outcome.Ready
@@ -9,6 +10,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
 
+@InternalGalvaApi
 class WebViewBundleResolver(
     private val cache: WebViewBundleCache,
     private val downloader: WebViewBundleDownloader,

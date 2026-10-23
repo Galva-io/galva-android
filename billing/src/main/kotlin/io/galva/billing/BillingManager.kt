@@ -28,7 +28,8 @@ interface BillingManager {
         activity: Activity,
         productId: String,
         basePlanId:String,
-        offerId: String,
+        /** Promotional offer id; null buys the base plan without an offer. */
+        offerId: String?,
         obfuscatedAccountId: String? = null,
     ): Flow<BillingLaunchState>
 

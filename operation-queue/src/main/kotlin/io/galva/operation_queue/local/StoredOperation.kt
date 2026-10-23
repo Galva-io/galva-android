@@ -1,5 +1,8 @@
 package io.galva.operation_queue.local
 
+import io.galva.common.InternalGalvaApi
+
+@InternalGalvaApi
 data class StoredOperation(
     val id: String,
     val type: String,

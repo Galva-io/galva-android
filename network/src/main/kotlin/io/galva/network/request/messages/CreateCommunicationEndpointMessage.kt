@@ -1,10 +1,12 @@
 package io.galva.network.request.messages
 
+import io.galva.common.InternalGalvaApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
 @SerialName("create-communication-endpoint")
+@InternalGalvaApi
 data class CreateCommunicationEndpointMessage(
     @SerialName("endpoint")
     val endpoint: EndpointNotification,
@@ -17,6 +19,7 @@ data class CreateCommunicationEndpointMessage(
 ): BatchMessage() {}
 
 @Serializable
+@InternalGalvaApi
 sealed class EndpointNotification {
     @Serializable
     @SerialName("PushNotification")

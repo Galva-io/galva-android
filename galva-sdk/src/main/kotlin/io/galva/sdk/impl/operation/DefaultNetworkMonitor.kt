@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 
-class DefaultNetworkMonitor(context: Context) : NetworkMonitor {
+internal class DefaultNetworkMonitor(context: Context) : NetworkMonitor {
     private val connectivityManager =
         context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 

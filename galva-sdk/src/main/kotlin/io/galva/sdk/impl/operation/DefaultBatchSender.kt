@@ -29,7 +29,7 @@ import kotlin.time.Duration.Companion.seconds
  * - other 4xx, encoding errors, a batch with nothing sendable → [PermanentSendException]
  *   (retrying can never succeed and would block every operation behind it)
  */
-class DefaultBatchSender(
+internal class DefaultBatchSender(
     private val service: IdentifyService,
     private val logger: Logger,
 ) : BatchSender {

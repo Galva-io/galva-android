@@ -1,5 +1,6 @@
 package io.galva.common.utils
 
+import io.galva.common.InternalGalvaApi
 import android.Manifest
 import android.app.Notification
 import android.app.PendingIntent
@@ -10,6 +11,7 @@ import android.content.res.Resources
 import android.os.Build
 
 
+@InternalGalvaApi
 object NotificationUtils {
     const val META_DEFAULT_ICON = "io.galva.sdk.default_notification_icon"
     const val META_DEFAULT_COLOR = "io.galva.sdk.default_notification_color"

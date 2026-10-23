@@ -33,7 +33,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-class DefaultBillingManager(
+internal class DefaultBillingManager(
     private val connection: BillingConnection,
     private val productIdSource: ProductIdSource,
     private val resolver: ProductDetailsResolver,
@@ -87,7 +87,6 @@ class DefaultBillingManager(
     }
 
     private suspend fun onPurchaseComplete(purchase: Purchase) {
-        purchaseMapper.map(purchase)
         val entitlement = purchaseMapper.map(purchase) ?: return
         entitlementStore.save(entitlement)
     }
@@ -124,14 +123,17 @@ class DefaultBillingManager(
         activity: Activity,
         productId: String,
         basePlanId: String,
-        offerId: String,
+        offerId: String?,
         obfuscatedAccountId: String?,
     ): Flow<BillingLaunchState> = flow {
         launchMutex.withLock {
             // Validate inputs against local DB
             val product = catalogStore.getProduct(productId)
             if (product == null) {
-                val state = BillingLaunchState.Failed(productId, offerId, "Product not found")
+                val state = BillingLaunchState.Failed(
+                    productId, offerId, "Product not found",
+                    kind = BillingLaunchState.FailureKind.PRODUCT_NOT_FOUND,
+                )
                 emit(state)
                 _latestLaunchState.value = state
                 return@withLock
@@ -139,7 +141,10 @@ class DefaultBillingManager(
 
             val offer = catalogStore.getOfferForPlan(basePlanId, offerId)
             if (offer == null) {
-                val state = BillingLaunchState.Failed(productId, offerId, "Offer not found")
+                val state = BillingLaunchState.Failed(
+                    productId, offerId, "Offer not found",
+                    kind = BillingLaunchState.FailureKind.OFFER_NOT_FOUND,
+                )
                 emit(state); _latestLaunchState.value = state
                 return@withLock
             }
@@ -192,7 +197,7 @@ class DefaultBillingManager(
             val entitlementStore: EntitlementStore = SqliteEntitlementStore(helper, logger)
             val purchaseResolver = PlayPurchaseResolver(purchaseEvents = purchasesUpdatedListener)
             return DefaultBillingManager(
-                connection = PlayBillingConnection(billingClient, logger),
+                connection = connection,
                 productIdSource = productIdSource,
                 resolver = PlayProductDetailsResolver(billingClient, connection, logger),
                 mapper = PlayBillingProductDetailsMapper(),

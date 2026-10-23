@@ -30,7 +30,12 @@ android {
         val apiKey = localProperties.getProperty("GALVA_API_KEY") ?: throw IllegalArgumentException("GALVA_API_KEY not found, please add it to local.properties")
         buildConfigField("String", "GALVA_API_KEY", "\"$apiKey\"")
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Starts an in-process mock backend and swaps in E2EApplication (src/androidTest).
+        testInstrumentationRunner = "io.galva.sample.e2e.E2ETestRunner"
+    }
+
+    testOptions {
+        animationsDisabled = true
     }
 
     buildTypes {
@@ -50,4 +55,11 @@ dependencies {
     implementation("com.android.billingclient:billing-ktx:8.0.0")
     implementation(libs.material)
     implementation(project(":galva-sdk"))
+
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.rules)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.espresso.core)
+    androidTestImplementation(libs.androidx.test.uiautomator)
+    androidTestImplementation(libs.mockwebserver)
 }

@@ -14,6 +14,8 @@ class MainApplication : Application() {
                 apiKey = BuildConfig.GALVA_API_KEY,
                 logLevel = LogLevel.VERBOSE,
                 env = Environment.Development,
+                // Messages show on the visible activity; no getInAppMessage() collector needed.
+                autoDisplayInAppMessages = true,
             )
         )
     }

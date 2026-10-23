@@ -4,7 +4,7 @@ import android.util.Log
 import io.galva.common.logger.LogLevel
 import io.galva.common.logger.LogSink
 
-class AndroidLogSink: LogSink {
+internal class AndroidLogSink: LogSink {
 
     override fun write(level: LogLevel, tag: String, message: String, throwable: Throwable?) {
         val safeTag = if (tag.length > MAX_TAG_LENGTH) tag.take(MAX_TAG_LENGTH) else tag

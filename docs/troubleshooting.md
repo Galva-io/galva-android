@@ -24,6 +24,8 @@ A Galva API that needs the configured SDK (`currentUserId`, `getInAppMessage()`,
 
 ## Nothing is sent to the backend
 
+- Has the user opted out? `Galva.instance.isOptedOut` returns `true` while tracking is off.
+
 - Check that `env` matches the API key (development key ↔ `Environment.Development`, production key ↔ `Environment.Production`). A mismatch shows up as HTTP `401` / `403` in the logs.
 - Uploads are batched: by default profile updates are sent when 10 are pending or after about 10 seconds, whichever comes first (the backend can lengthen both). The queue pauses while the app is in the background and resumes on the next foreground.
 - Offline? Updates stay on disk and are sent when connectivity returns.
@@ -35,6 +37,8 @@ A Galva API that needs the configured SDK (`currentUserId`, `getInAppMessage()`,
 3. Does the backend have a pending in-app message for this user? Look for the `identities/communications` request and its response in the logs.
 4. For targeted messages, has `identify()` been called with the expected user id?
 5. Look for `Failed to resolve message` / `Failed to resolve bundle` errors — the message content or its web bundle could not be downloaded (network, wrong `env`).
+6. Only one message is published per return to the foreground, and none while a message is on screen. Send the app to the background and back, or call `Galva.instance.checkForMessages()`.
+7. A message is published once per app session. If it was published while nothing was collecting (for example the app came to the foreground on a screen that does not collect), restart the app to see it again.
 
 ## In-app message opens but is blank or buttons do nothing
 

@@ -1,8 +1,10 @@
 package io.galva.common.utils
 
+import io.galva.common.InternalGalvaApi
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+@InternalGalvaApi
 object AppInfoSource {
     fun read(context: Context): App? = try {
         val pm = context.packageManager
@@ -27,4 +29,5 @@ object AppInfoSource {
     }
 }
 
+@InternalGalvaApi
 data class App(val build: String,val name: String,val namespace: String,val version: String)

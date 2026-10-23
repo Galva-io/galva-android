@@ -18,12 +18,21 @@
         android:theme="@style/Theme.SmartTime">
         <meta-data android:name="io.galva.sdk.default_notification_color" android:resource="@android:color/holo_red_dark"/>
         <meta-data android:name="io.galva.sdk.default_notification_icon" android:resource="@drawable/outline_ac_unit_24"/>
+        <!-- singleTop: a Galva link opened while the panel is on top arrives in onNewIntent. -->
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Galva links: the scheme must start with "gv", e.g. gvdemo://openCommunication?communicationId=… -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="gvdemo" />
             </intent-filter>
         </activity>
     </application>

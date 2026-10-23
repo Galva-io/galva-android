@@ -8,7 +8,7 @@ import androidx.lifecycle.ProcessLifecycleOwner
 import io.galva.common.lifecycle.AppLifecycleObserver
 import io.galva.common.lifecycle.AppLifecycleState
 
-class AndroidAppLifecycleObserver(
+internal class AndroidAppLifecycleObserver(
     private val lifecycleOwner: LifecycleOwner = ProcessLifecycleOwner.get(),
 ) : AppLifecycleObserver {
 

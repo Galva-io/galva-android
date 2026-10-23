@@ -1,9 +1,12 @@
 package io.galva.network
 
+import io.galva.common.InternalGalvaApi
+
 /**
  * Case-insensitive header map. Lookups normalize to lowercase.
  * Immutable from the caller's perspective — use [builder] to compose.
  */
+@InternalGalvaApi
 class HttpHeaders private constructor(
     private val map: Map<String, String>,
 ) {

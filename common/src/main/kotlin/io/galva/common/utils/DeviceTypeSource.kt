@@ -1,9 +1,11 @@
 package io.galva.common.utils
 
+import io.galva.common.InternalGalvaApi
 import android.app.UiModeManager
 import android.content.Context
 import android.content.res.Configuration
 
+@InternalGalvaApi
 enum class DeviceType(val id: String) {
     PHONE("phone"), TABLET("tablet"), WATCH("watch"), DESKTOP("desktop"), TV("tv"), AUTO("auto"), UNKNOWN(
         "unknown"

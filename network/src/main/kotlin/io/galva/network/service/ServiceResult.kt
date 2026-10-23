@@ -1,9 +1,11 @@
 package io.galva.network.service
 
+import io.galva.common.InternalGalvaApi
 import io.galva.network.HttpHeaders
 import io.galva.network.HttpResponse
 import io.galva.network.NetworkError
 
+@InternalGalvaApi
 sealed class ServiceResult<out T> {
 
     data class Success<T>(val value: T) : ServiceResult<T>()

@@ -12,7 +12,7 @@ import io.galva.network.service.ServiceResult
 import io.galva.sdk.iam.BuildConfig
 import kotlinx.coroutines.flow.Flow
 
-class SdkInitializeConfigStore(
+internal class SdkInitializeConfigStore(
     private val sdkService: SdkService,
     private val keyValueStorage: KeyValueStorage,
 ) : SdkConfigStore {

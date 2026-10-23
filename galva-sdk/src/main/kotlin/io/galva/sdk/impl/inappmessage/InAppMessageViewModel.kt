@@ -26,18 +26,21 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import java.util.Locale
 
-class InAppMessageViewModel(
+internal class InAppMessageViewModel(
     private val billingManager: BillingManager,
     private val iamService: IAMService
 ) : ViewModel() {
-    fun launchBillingFlow(activity: Activity, productId: String, basePlanId: String, offerId: String) =
+    fun launchBillingFlow(activity: Activity, productId: String, basePlanId: String, offerId: String?) =
         billingManager.launchBilling(
             activity = activity,
             productId = productId,
             basePlanId = basePlanId,
             offerId = offerId,
-            obfuscatedAccountId = HashUtils.hashToSafeToken(Galva.instance.obfuscatedAccountId)
+            obfuscatedAccountId = purchaseAccountId()
         )
+
+    /** Value attached to Play purchases: the identity's obfuscatedAccountId, hashed. */
+    private fun purchaseAccountId() = HashUtils.hashToSafeToken(Galva.instance.obfuscatedAccountId)
 
     private var _storefrontCountryCode: String? = null
     val storefrontCountryCode
@@ -61,6 +64,7 @@ class InAppMessageViewModel(
             pushAuthorization = "authorized",
             locale = Locale.getDefault().toLanguageTag(),
             storefrontCountryCode = countryCode ?: "unknown",
+            appAccountToken = purchaseAccountId(),
             safeArea = windowInsets?.run {
                 SafeArea(
                     top = top, left = left, right = right, bottom = bottom
@@ -117,7 +121,7 @@ class InAppMessageViewModel(
 
 @kotlinx.serialization.InternalSerializationApi
 @Serializable
-data class ProductWithOfferPrice(
+internal data class ProductWithOfferPrice(
     val basePrice: Long,
     val localizedBasePrice: String,
     val currencyCode: String,
@@ -127,7 +131,7 @@ data class ProductWithOfferPrice(
 
 @kotlinx.serialization.InternalSerializationApi
 @Serializable
-data class TargetOfferPrice(
+internal data class TargetOfferPrice(
     val priceDisplay: String,
     val billingPeriod: String,
     val price: Long,

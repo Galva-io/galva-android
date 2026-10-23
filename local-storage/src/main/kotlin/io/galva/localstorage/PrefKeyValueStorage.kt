@@ -1,5 +1,6 @@
 package io.galva.localstorage
 
+import io.galva.common.InternalGalvaApi
 import android.content.Context
 import android.content.SharedPreferences
 import io.galva.localstorage.core.KeyValueStorage
@@ -14,6 +15,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 
+@InternalGalvaApi
 class PrefKeyValueStorage(
     context: Context,
     fileName: String = "galva-prefs",

@@ -22,6 +22,8 @@ import org.jetbrains.kotlin.gradle.dsl.KotlinAndroidProjectExtension
     extensions.configure<KotlinAndroidProjectExtension> {
         compilerOptions {
             jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+            // SDK modules may use each other's internals; apps get a compile error instead.
+            optIn.add("io.galva.common.InternalGalvaApi")
         }
     }
 

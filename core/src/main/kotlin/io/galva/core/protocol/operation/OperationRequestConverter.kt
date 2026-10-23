@@ -1,12 +1,15 @@
 package io.galva.core.protocol.operation
 
+import io.galva.common.InternalGalvaApi
 import io.galva.network.request.messages.BatchMessage
 
+@InternalGalvaApi
 interface OperationRequestConverter {
     fun operationToBatchMessage(operation: APIOperation): BatchMessage
 }
 
-interface AdvertingProvider {
+@InternalGalvaApi
+interface AdvertisingProvider {
     fun adTrackingEnabled(): Boolean
-    fun advertingId(): String?
+    fun advertisingId(): String?
 }

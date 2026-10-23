@@ -5,7 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import io.galva.billing.BillingManager
 import io.galva.network.service.IAMService
 
-class InAppMessageViewModelFactory(private val billingManager: BillingManager,
+internal class InAppMessageViewModelFactory(private val billingManager: BillingManager,
     private val iamService: IAMService) :
     ViewModelProvider.Factory{
     override fun <T : ViewModel> create(modelClass: Class<T>): T {

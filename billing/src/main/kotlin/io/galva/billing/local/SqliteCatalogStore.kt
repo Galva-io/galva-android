@@ -1,5 +1,6 @@
 package io.galva.billing.local
 
+import io.galva.common.InternalGalvaApi
 import android.content.ContentValues
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
@@ -27,6 +28,7 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 
+@InternalGalvaApi
 class SqliteCatalogStore(
     private val helper: BillingSqliteHelper,
     private val logger: Logger,
@@ -100,13 +102,22 @@ class SqliteCatalogStore(
         }
     }
 
-    override suspend fun getOfferForPlan(basePlanId: String, offerId: String): Offer? {
+    override suspend fun getOfferForPlan(basePlanId: String, offerId: String?): Offer? {
         val db = helper.readableDatabase
-        return  db.rawQuery(
-            """SELECT offer_token, offer_id, base_plan_id, tags FROM offers
-               WHERE base_plan_id = ? AND offer_id = ? LIMIT 1""",
-            arrayOf(basePlanId, offerId),
-        ).use { cursor ->
+        val cursor = if (offerId == null) {
+            db.rawQuery(
+                """SELECT offer_token, offer_id, base_plan_id, tags FROM offers
+                   WHERE base_plan_id = ? AND offer_id IS NULL LIMIT 1""",
+                arrayOf(basePlanId),
+            )
+        } else {
+            db.rawQuery(
+                """SELECT offer_token, offer_id, base_plan_id, tags FROM offers
+                   WHERE base_plan_id = ? AND offer_id = ? LIMIT 1""",
+                arrayOf(basePlanId, offerId),
+            )
+        }
+        return cursor.use { cursor ->
             if (cursor.moveToFirst()) readOffer(cursor) else null
         }
     }

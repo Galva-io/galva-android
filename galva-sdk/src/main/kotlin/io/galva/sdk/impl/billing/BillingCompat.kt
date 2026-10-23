@@ -2,11 +2,11 @@ package io.galva.sdk.impl.billing
 
 import com.android.billingclient.api.BillingClient
 
-interface BillingCompat {
+internal interface BillingCompat {
     fun enableAutoServiceReconnection(builder: BillingClient.Builder): Boolean
 }
 
-class PlayBillingCompat : BillingCompat {
+internal class PlayBillingCompat : BillingCompat {
     override fun enableAutoServiceReconnection(
         builder: BillingClient.Builder
     ): Boolean {

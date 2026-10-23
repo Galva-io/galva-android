@@ -1,9 +1,11 @@
 package io.galva.localstorage.crypto
 
+import io.galva.common.InternalGalvaApi
 import android.util.Base64
 import io.galva.localstorage.core.KeyProvider
 import javax.crypto.spec.GCMParameterSpec
 
+@InternalGalvaApi
 class AesGcmCipher(private val keyProvider: KeyProvider) : Cipher {
 
     override fun encrypt(plaintext: String, aad: ByteArray?): String {

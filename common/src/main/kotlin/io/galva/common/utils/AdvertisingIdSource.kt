@@ -1,8 +1,10 @@
 package io.galva.common.utils
 
+import io.galva.common.InternalGalvaApi
 import android.content.Context
 import java.lang.reflect.InvocationTargetException
 
+@InternalGalvaApi
 object AdvertisingIdSource {
 
     fun getAndCacheGoogleAdvertisingId(context: Context): AdvertisingInfo? {
@@ -58,4 +60,5 @@ object AdvertisingIdSource {
     }
 }
 
+@InternalGalvaApi
 data class AdvertisingInfo(val id: String?, val enabled: Boolean)

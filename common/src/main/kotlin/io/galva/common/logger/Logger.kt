@@ -1,12 +1,16 @@
 package io.galva.common.logger
 
+import io.galva.common.InternalGalvaApi
+
+@InternalGalvaApi
 class Logger internal constructor(
     private val tag: String,
-    private val sink: LogSink,
+    sink: LogSink,
     initialLevel: LogLevel,
     initialEnabled: Boolean,
 ) {
 
+    @Volatile private var sink: LogSink = sink
     @Volatile private var level: LogLevel = initialLevel
     @Volatile private var enabled: Boolean = initialEnabled
 
@@ -14,6 +18,11 @@ class Logger internal constructor(
 
     fun setLogLevel(level: LogLevel){
         this.level = level
+    }
+
+    /** Routes all further output to [sink]; the level filter still applies. */
+    fun setSink(sink: LogSink) {
+        this.sink = sink
     }
 
     fun isLoggable(level: LogLevel): Boolean =

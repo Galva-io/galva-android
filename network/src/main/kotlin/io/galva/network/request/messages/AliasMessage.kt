@@ -1,10 +1,12 @@
 package io.galva.network.request.messages
 
+import io.galva.common.InternalGalvaApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
 @SerialName("alias")
+@InternalGalvaApi
 data class AliasMessage (
     val previousId:String,
     val targetId:String,

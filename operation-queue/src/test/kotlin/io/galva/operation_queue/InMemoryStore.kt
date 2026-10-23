@@ -64,5 +64,12 @@ class InMemoryStore : OperationStore {
         refresh()
     }
 
+    override suspend fun trimToNewest(maxCount: Int): Int {
+        val excess = rows.values.sortedBy { it.createdAt }.take((rows.size - maxCount).coerceAtLeast(0))
+        excess.forEach { rows.remove(it.id); locks.remove(it.id) }
+        refresh()
+        return excess.size
+    }
+
     fun ids() = rows.keys.toList()
 }

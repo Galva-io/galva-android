@@ -12,6 +12,11 @@ android {
     }
 
 }
+// Every public declaration of the facade module is deliberate API.
+configure<org.jetbrains.kotlin.gradle.dsl.KotlinAndroidProjectExtension> {
+    explicitApi()
+}
+
 dependencies {
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
 
@@ -19,7 +24,7 @@ dependencies {
     compileOnly(libs.billing.ktx)
     implementation(libs.androidx.activity)
     implementation(libs.androidx.activity.ktx)
-    implementation(libs.androidx.appcompat)
+    implementation(libs.androidx.core)
     implementation(libs.androidx.lifecycle.process)
     api(libs.kotlinx.coroutines.core)
 

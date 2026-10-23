@@ -13,7 +13,7 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 
-class GalvaProductIdSource(
+internal class GalvaProductIdSource(
     private val configStore: SdkInitializeConfigStore
 ) : ProductIdSource {
     override suspend fun fetchProductIds(): List<String> {

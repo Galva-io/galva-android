@@ -1,5 +1,6 @@
 package io.galva.network.android
 
+import io.galva.common.InternalGalvaApi
 import io.galva.common.logger.Logger
 import io.galva.network.Endpoint
 import io.galva.network.HttpClient
@@ -25,6 +26,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.putJsonObject
 
+@InternalGalvaApi
 class HttpAPIIdentifyService(
     private val baseURL: String,
     private val httpClient: HttpClient,

@@ -1,5 +1,6 @@
 package io.galva.operation_queue.local
 
+import io.galva.common.InternalGalvaApi
 import android.content.ContentValues
 import android.database.sqlite.SQLiteDatabase
 import io.galva.common.logger.Logger
@@ -14,6 +15,7 @@ import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.withContext
 
+@InternalGalvaApi
 class SqliteOperationStore(
     private val helper: OperationsSqliteHelper,
     private val logger: Logger,
@@ -186,6 +188,22 @@ class SqliteOperationStore(
         db.execSQL("DELETE FROM operations")
         invalidations.tryEmit(Unit)
         logger.debug { "Cleared all operations" }
+    }
+
+    override suspend fun trimToNewest(maxCount: Int): Int = withContext(ioDispatcher) {
+        val db = helper.writableDatabase
+        val excess = db.rawQuery("SELECT COUNT(*) FROM operations", null).use { cursor ->
+            cursor.moveToFirst()
+            cursor.getInt(0)
+        } - maxCount
+        if (excess <= 0) return@withContext 0
+        val deleted = db.delete(
+            "operations",
+            "id IN (SELECT id FROM operations ORDER BY created_at ASC LIMIT ?)",
+            arrayOf(excess.toString()),
+        )
+        invalidations.tryEmit(Unit)
+        deleted
     }
 
     override suspend fun clearOwnedBy(ownerId: String): Unit = withContext(ioDispatcher) {

@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:fitsSystemWindows="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:id="@+id/status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:textIsSelectable="true" />
+
+        <TextView
+            style="@style/ControlPanel.Section"
+            android:text="@string/section_identity" />
+
+        <EditText
+            android:id="@+id/user_id_input"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:autofillHints="username"
+            android:hint="@string/hint_user_id"
+            android:inputType="text"
+            android:singleLine="true" />
+
+        <Button
+            android:id="@+id/identify_button"
+            style="@style/ControlPanel.Button"
+            android:text="@string/action_identify" />
+
+        <EditText
+            android:id="@+id/email_input"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:autofillHints="emailAddress"
+            android:hint="@string/hint_email"
+            android:inputType="textEmailAddress"
+            android:singleLine="true"
+            android:text="@string/default_email" />
+
+        <Button
+            android:id="@+id/set_email_button"
+            style="@style/ControlPanel.Button"
+            android:text="@string/action_set_email" />
+
+        <Button
+            android:id="@+id/logout_button"
+            style="@style/ControlPanel.Button"
+            android:text="@string/action_logout" />
+
+        <TextView
+            style="@style/ControlPanel.Section"
+            android:text="@string/section_privacy" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/opt_out_switch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:text="@string/action_opt_out" />
+
+        <TextView
+            style="@style/ControlPanel.Section"
+            android:text="@string/section_messages" />
+
+        <Button
+            android:id="@+id/check_messages_button"
+            style="@style/ControlPanel.Button"
+            android:text="@string/action_check_messages" />
+
+        <Button
+            android:id="@+id/open_deep_link_button"
+            style="@style/ControlPanel.Button"
+            android:text="@string/action_open_deep_link" />
+
+        <Button
+            android:id="@+id/simulate_push_button"
+            style="@style/ControlPanel.Button"
+            android:text="@string/action_simulate_push" />
+    </LinearLayout>
+</ScrollView>

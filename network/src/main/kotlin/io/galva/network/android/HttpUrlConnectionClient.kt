@@ -1,5 +1,6 @@
 package io.galva.network.android
 
+import io.galva.common.InternalGalvaApi
 import io.galva.common.logger.Logger
 import io.galva.network.HttpClient
 import io.galva.network.HttpHeaders
@@ -19,6 +20,7 @@ import java.net.URL
 import java.net.UnknownHostException
 import java.nio.charset.StandardCharsets
 
+@InternalGalvaApi
 class HttpUrlConnectionClient(
     private val apiKey: String,
     private val sdkVersion: String,

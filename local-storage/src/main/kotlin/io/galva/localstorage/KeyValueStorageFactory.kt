@@ -1,5 +1,6 @@
 package io.galva.localstorage
 
+import io.galva.common.InternalGalvaApi
 import android.content.Context
 import io.galva.localstorage.core.KeyValueStorage
 import io.galva.localstorage.crypto.AesGcmCipher
@@ -8,6 +9,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 
 
+@InternalGalvaApi
 object KeyValueStorageFactory {
 
     /** Plain (unencrypted) key/value storage. */

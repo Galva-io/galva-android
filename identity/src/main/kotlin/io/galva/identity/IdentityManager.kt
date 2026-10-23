@@ -1,8 +1,10 @@
 package io.galva.identity
 
+import io.galva.common.InternalGalvaApi
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.JsonObject
 
+@InternalGalvaApi
 interface IdentityManager {
     val state: StateFlow<Identity>
     val current: Identity get() = state.value
