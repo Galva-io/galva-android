@@ -56,14 +56,22 @@ dependencyResolutionManagement {
 ```kotlin
 // app/build.gradle.kts
 dependencies {
-    implementation("io.galva.sdk:galva-sdk:<version>")
-    implementation("com.android.billingclient:billing-ktx:8.0.0")
+    implementation("io.galva.sdk:galva-sdk:<version>")              // e.g. 1.3.0-SNAPSHOT
+    implementation("com.android.billingclient:billing-ktx:8.0.0")  // 8.0.0 or newer
 }
 ```
 
-**2. Configure once** in your `Application`:
+Using RevenueCat? Depend on [`io.galva.sdk:galva-revenuecat`](https://github.com/Galva-io/galva-android-revenuecat) instead: it brings `galva-sdk`, routes purchases from Galva's messages through RevenueCat and keeps Galva on RevenueCat's user.
+
+**2. Configure once** in your `Application`. With `autoDisplayInAppMessages`, in-app messages show on the visible activity with no other code:
 
 ```kotlin
+import android.app.Application
+import io.galva.sdk.Configuration
+import io.galva.sdk.Environment
+import io.galva.sdk.Galva
+import io.galva.sdk.LogLevel
+
 class MyApp : Application() {
     override fun onCreate() {
         super.onCreate()
@@ -73,6 +81,7 @@ class MyApp : Application() {
                 apiKey = BuildConfig.GALVA_API_KEY,
                 env = if (BuildConfig.DEBUG) Environment.Development else Environment.Production,
                 logLevel = if (BuildConfig.DEBUG) LogLevel.DEBUG else LogLevel.WARN,
+                autoDisplayInAppMessages = true,
             ),
         )
     }
@@ -82,6 +91,9 @@ class MyApp : Application() {
 **3. Identify the user** after sign-in (and on start-up for restored sessions):
 
 ```kotlin
+import io.galva.sdk.Galva
+import io.galva.sdk.ProfileProperty
+
 Galva.instance.identify("user_42", email = "jane@example.com")
 Galva.instance.updateProperties(ProfileProperty.Custom("plan_tier", "pro"))
 Galva.instance.track("Purchase", mapOf("sku" to "pro_yearly", "price" to 9.99))
@@ -90,19 +102,7 @@ Galva.instance.track("Purchase", mapOf("sku" to "pro_yearly", "price" to 9.99))
 Galva.instance.logout()
 ```
 
-**4. Render in-app messages** — either add `autoDisplayInAppMessages = true` to the `Configuration` above, or collect them yourself from your main activity:
-
-```kotlin
-lifecycleScope.launch {
-    repeatOnLifecycle(Lifecycle.State.RESUMED) {
-        Galva.instance.getInAppMessage().collect { message ->
-            Galva.instance.showMessage(this@MainActivity, message)
-        }
-    }
-}
-```
-
-That is the core integration. Deep links and push take a few more lines each — see the [integration guide](docs/integration-guide.md).
+That is the core integration. To decide yourself when messages appear, deep links and push, see the [integration guide](docs/integration-guide.md). Upgrading from 1.2? See [Upgrading from 1.2](docs/installation.md#upgrading-from-12).
 
 ---
 
@@ -110,8 +110,8 @@ That is the core integration. Deep links and push take a few more lines each —
 
 | Guide | What's inside |
 |---|---|
-| [Installation](docs/installation.md) | Requirements, GitHub Packages credentials, dependencies, configuration, verifying the setup, R8 |
-| [Integration guide](docs/integration-guide.md) | Configuration reference, identity, properties, in-app messages (Views + Compose), deep links, FCM push, billing, logging, Java |
+| [Installation](docs/installation.md) | Requirements, GitHub Packages credentials, dependencies, configuration, verifying the setup, R8, upgrading from 1.2 |
+| [Integration guide](docs/integration-guide.md) | Configuration reference, identity, properties, events, in-app messages (Views + Compose), deep links, push (FCM, HMS, ADM), billing and RevenueCat, logging, Java |
 | [Troubleshooting](docs/troubleshooting.md) | Common problems and how to diagnose them |
 
 ---
@@ -164,7 +164,7 @@ fun setEnableLogging(enabled: Boolean)
 fun setLogger(sink: LogSink)
 ```
 
-This is the whole public API (plus `AppEvent`, `Configuration`, `Environment`, `ProfileProperty`, `LogLevel`, `LogSink`, `Message`, `WorkflowType`, the billing models, `GalvaIntegration` and the purchase controller types: `GalvaPurchaseController`, `GalvaPurchaseRequest`, `GalvaPurchaseResult`, `GalvaTransaction`, `GalvaPurchaseException`). Building an integration package takes the `@GalvaIntegrationApi` opt-in. Everything else in the SDK's modules is marked `@InternalGalvaApi` and does not compile when used from an app.
+This is the whole public API, plus its types: `Configuration`, `Environment`, `LogLevel`, `LogSink`, `ProfileProperty`, `AppEvent`, `Message`, `WorkflowType`, `PushProvider`, `GalvaIntegration` and the purchase controller types (`GalvaPurchaseController`, `GalvaPurchaseRequest`, `GalvaPurchaseResult`, `GalvaTransaction`, `GalvaPurchaseException`). All of them are in `io.galva.sdk`, so `import io.galva.sdk.*` covers everything. The SDK's other modules are runtime-only: their classes are not on your compile classpath. Building an integration package takes the `@GalvaIntegrationApi` opt-in.
 
 ---
 

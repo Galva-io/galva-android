@@ -10,7 +10,6 @@ android {
     }
 }
 dependencies {
-    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
     implementation(libs.kotlinx.coroutines.core)
 
     api(project(":identity"))

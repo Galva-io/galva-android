@@ -10,7 +10,6 @@ android {
     }
 }
 dependencies {
-    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
     implementation(project(":local-storage"))
     implementation(project(":common"))
     implementation(libs.kotlinx.serialization.json)

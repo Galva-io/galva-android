@@ -16,7 +16,6 @@ android {
     }
 }
 dependencies {
-    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
     implementation(libs.kotlinx.coroutines.core)
     implementation(project(":identity"))
     implementation(project(":local-storage"))

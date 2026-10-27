@@ -38,8 +38,6 @@ val apiCheck = tasks.register<kotlinx.validation.KotlinApiCompareTask>("apiCheck
 tasks.named("check") { dependsOn(apiCheck) }
 
 dependencies {
-    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
-
     // Internal modules: published for the app's runtime, never on its compile classpath. Every type
     // in the public API lives in this module (io.galva.sdk).
     implementation(project(":core"))

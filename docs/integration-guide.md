@@ -34,7 +34,7 @@ getInAppMessage().collect ─▶     showMessage() renders a WebView
 - Profile updates are written to disk before upload, so they survive process death and offline periods and are retried with backoff.
 - Calls made before `configure()` (for example `identify`) are queued and processed once the SDK is configured.
 
-The single entry point is `Galva.instance` (`io.galva.sdk.Galva`).
+The single entry point is `Galva.instance` (`io.galva.sdk.Galva`). Every type in this guide is in `io.galva.sdk` too, so `import io.galva.sdk.*` covers the snippets; only `GalvaIntegration.revenueCat()` comes from the RevenueCat package (`io.galva.revenuecat.revenueCat`).
 
 ---
 
@@ -453,11 +453,16 @@ Purchases started inside a Galva message are acknowledged by Galva's backend, so
 
 ### RevenueCat
 
-Using RevenueCat? Add the [`galva-revenuecat`](https://github.com/Galva-io/galva-android-revenuecat) integration instead of wiring billing yourself. Purchases from Galva's messages then go through RevenueCat, and Galva follows RevenueCat's identity:
+Using RevenueCat? Depend on [`io.galva.sdk:galva-revenuecat`](https://github.com/Galva-io/galva-android-revenuecat) instead of `galva-sdk` (it brings `galva-sdk` and shares your app's RevenueCat 10.x) and pass its integration to `configure`. Purchases from Galva's messages then go through RevenueCat, and Galva follows RevenueCat's identity, so `Purchases.logIn` / `logOut` replace your `identify` / `logout` calls:
 
 ```kotlin
+import io.galva.revenuecat.revenueCat
+import io.galva.sdk.GalvaIntegration
+
 Galva.configure(this, configuration, integrations = listOf(GalvaIntegration.revenueCat()))
 ```
+
+Its README covers the repository, the identity options and what the integration syncs.
 
 ### Your own billing layer (purchase controllers)
 

@@ -9,6 +9,7 @@ This guide gets the Galva Android SDK into your app and verifies that it is wire
 - [4. Verify the installation](#4-verify-the-installation)
 - [R8 / ProGuard](#r8--proguard)
 - [Using a local build of the SDK](#using-a-local-build-of-the-sdk)
+- [Upgrading from 1.2](#upgrading-from-12)
 - [Installation problems](#installation-problems)
 
 ---
@@ -94,7 +95,9 @@ dependencies {
 
 Replace `<version>` with the version you were given (or the latest one listed under the repository's **Packages** tab on GitHub, e.g. `1.3.0-SNAPSHOT`).
 
-`galva-sdk` is the only artifact you declare. It brings the internal modules (`core`, `identity`, `network`, `inapp-message`, `billing`, …) in transitively — do not add them yourself.
+`galva-sdk` is the only artifact you declare. It brings the SDK's internal modules (`core`, `identity`, `network`, `inapp-message`, `billing`, …) as runtime dependencies; don't add them yourself. Your code compiles against `galva-sdk` alone: every type you use is in `io.galva.sdk`.
+
+**Using RevenueCat?** Declare [`io.galva.sdk:galva-revenuecat`](https://github.com/Galva-io/galva-android-revenuecat) instead of `galva-sdk` (it brings it), and add its repository next to this one. Purchases from Galva's messages then go through RevenueCat, and Galva follows RevenueCat's user, so you don't call `identify` yourself. Its README covers the setup.
 
 **Why Play Billing is a separate dependency.** Galva drives purchases started from in-app messages through Play Billing, so it must be on the runtime classpath. Leaving it to your app means you control the exact version. If your app already depends on Play Billing directly or through another library (for example RevenueCat), make sure the resolved version is **8.0.0 or newer**:
 
@@ -128,6 +131,8 @@ class MyApp : Application() {
                 apiKey = BuildConfig.GALVA_API_KEY,
                 env = if (BuildConfig.DEBUG) Environment.Development else Environment.Production,
                 logLevel = if (BuildConfig.DEBUG) LogLevel.DEBUG else LogLevel.WARN,
+                // Shows in-app messages on the visible activity; leave it out to show them yourself.
+                autoDisplayInAppMessages = true,
             ),
         )
     }
@@ -227,12 +232,31 @@ Remove `mavenLocal()` again when you are done — it is easy to ship a stale loc
 
 ---
 
+## Upgrading from 1.2
+
+1.3.0 puts every type apps use in `io.galva.sdk`; the SDK's other modules are no longer on your compile classpath. Update the imports, and replace the few removed members:
+
+| 1.2 | 1.3 |
+|---|---|
+| `io.galva.core.protocol.Configuration`, `io.galva.core.protocol.Environment` | `io.galva.sdk.Configuration`, `io.galva.sdk.Environment` |
+| `io.galva.core.protocol.identity.ProfileProperty` | `io.galva.sdk.ProfileProperty` |
+| `io.galva.common.logger.LogLevel`, `io.galva.common.logger.LogSink` | `io.galva.sdk.LogLevel`, `io.galva.sdk.LogSink` |
+| `io.galva.iam.Message`, `io.galva.iam.WorkflowType` | `io.galva.sdk.Message`, `io.galva.sdk.WorkflowType` |
+| `Galva.instance.billingManager` | Removed. Purchases inside messages need no code; to run them through your own billing layer, install a [purchase controller](integration-guide.md#your-own-billing-layer-purchase-controllers). |
+| `ProfileProperty.propertyValue` | Removed. Read the property's own field, e.g. `ProfileProperty.Custom.value`. |
+| `WorkflowType.wireValue`, `WorkflowType.fromWireValue` | Removed. |
+
+Everything else keeps working as is. `setPushToken(token)` still registers an FCM token; its new optional `PushProvider` argument is for Huawei and Amazon devices.
+
+---
+
 ## Installation problems
 
 | Symptom | Fix |
 |---|---|
 | `Could not GET 'https://maven.pkg.github.com/…'. Received status code 401` | Credentials are missing or wrong. Check `gpr.user` / `gpr.key` and that the token has the `read:packages` scope. |
 | `Could not find io.galva.sdk:galva-sdk:<version>` | The version does not exist, or the repository block is missing / has a `content { }` filter that excludes `io.galva.sdk`. |
+| `Unresolved reference 'core'` / `'common'` / `'iam'` in a Galva import, or `Cannot access class 'Configuration'` | Code written for 1.2: the types moved to `io.galva.sdk`. See [Upgrading from 1.2](#upgrading-from-12). |
 | `Dependency 'io.galva.sdk:…' requires libraries and applications that depend on it to compile against version 36 or later` | Raise `compileSdk` to 36. |
 | `Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 1.9.0` | Upgrade your project's Kotlin Gradle plugin to 2.1 or newer. |
 | Logcat shows `Galva SDK requires Play Billing 8.0+, but the app has …` | Purchases inside messages fail until you add `com.android.billingclient:billing-ktx:8.0.0` (or newer), or align the version another dependency forces (`dependencyInsight`, above). The rest of the SDK keeps working. |
