@@ -2,7 +2,6 @@
 
 Everything after [installation](installation.md): identifying users, rendering in-app messages, deep links, push notifications, billing and logging.
 
-- [How it works](#how-it-works)
 - [Configuration reference](#configuration-reference)
 - [Identify users](#identify-users)
 - [User properties](#user-properties)
@@ -16,25 +15,6 @@ Everything after [installation](installation.md): identifying users, rendering i
 - [Logging](#logging)
 - [Calling the SDK from Java](#calling-the-sdk-from-java)
 - [Integration checklist](#integration-checklist)
-
----
-
-## How it works
-
-```
-Your app                         Galva SDK                              Galva backend
-────────                         ─────────                              ─────────────
-Galva.configure(...)      ───▶   anonymous id, sdk/initialize    ───▶   resolves your app from the API key
-identify / updateProperties ─▶   persisted to SQLite, batched    ───▶   ingests, attributes
-                                 ◀── pending in-app message ─────────   workflow decides who / when
-observeInAppMessages(...) ─▶     showMessage() renders a WebView
-```
-
-- Every public call is **fire-and-forget**: it returns immediately and the work runs on a background queue, in the order you made the calls.
-- Profile updates are written to disk before upload, so they survive process death and offline periods and are retried with backoff.
-- Calls made before `configure()` (for example `identify`) are queued and processed once the SDK is configured.
-
-The single entry point is `Galva.instance` (`io.galva.sdk.Galva`). Every type in this guide is in `io.galva.sdk` too, so `import io.galva.sdk.*` covers the snippets; only `GalvaIntegration.revenueCat()` comes from the RevenueCat package (`io.galva.revenuecat.revenueCat`).
 
 ---
 
