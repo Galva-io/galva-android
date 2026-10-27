@@ -50,7 +50,7 @@ dependencies {
 }
 ```
 
-Using RevenueCat? Depend on [`io.galva.sdk:galva-revenuecat`](https://github.com/Galva-io/galva-android-revenuecat) instead, and follow its README.
+Using RevenueCat? Depend on [`io.galva.sdk:galva-android-revenuecat`](https://github.com/Galva-io/galva-android-revenuecat) instead, and follow its README.
 
 ### 2. Configure
 

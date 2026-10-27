@@ -445,7 +445,7 @@ Purchases started inside a Galva message are acknowledged by Galva's backend, so
 
 ### RevenueCat
 
-Using RevenueCat? Depend on [`io.galva.sdk:galva-revenuecat`](https://github.com/Galva-io/galva-android-revenuecat) instead of `galva-sdk` (it brings `galva-sdk` and shares your app's RevenueCat 10.x) and pass its integration to `configure`. Purchases from Galva's messages then go through RevenueCat, and Galva follows RevenueCat's identity, so `Purchases.logIn` / `logOut` replace your `identify` / `logout` calls:
+Using RevenueCat? Depend on [`io.galva.sdk:galva-android-revenuecat`](https://github.com/Galva-io/galva-android-revenuecat) instead of `galva-sdk` (it brings `galva-sdk` and shares your app's RevenueCat 10.x) and pass its integration to `configure`. Purchases from Galva's messages then go through RevenueCat, and Galva follows RevenueCat's identity, so `Purchases.logIn` / `logOut` replace your `identify` / `logout` calls:
 
 ```kotlin
 import io.galva.revenuecat.revenueCat

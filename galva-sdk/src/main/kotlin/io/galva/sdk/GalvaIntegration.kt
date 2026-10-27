@@ -3,7 +3,7 @@ package io.galva.sdk
 import kotlinx.coroutines.CoroutineScope
 
 /**
- * Marks the API that integration packages (e.g. `galva-revenuecat`) build on. Apps don't opt in:
+ * Marks the API that integration packages (e.g. `galva-android-revenuecat`) build on. Apps don't opt in:
  * they only pass the factories those packages provide, like `GalvaIntegration.revenueCat()`.
  * The Android counterpart of the iOS SDK's `@_spi(GalvaIntegration)`.
  */

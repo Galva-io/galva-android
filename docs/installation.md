@@ -97,7 +97,7 @@ Replace `<version>` with the version you were given (or the latest one listed un
 
 `galva-sdk` is the only artifact you declare. It brings the SDK's internal modules (`core`, `identity`, `network`, `inapp-message`, `billing`, …) as runtime dependencies; don't add them yourself. Your code compiles against `galva-sdk` alone: every type you use is in `io.galva.sdk`.
 
-**Using RevenueCat?** Declare [`io.galva.sdk:galva-revenuecat`](https://github.com/Galva-io/galva-android-revenuecat) instead of `galva-sdk` (it brings it), and add its repository next to this one. Purchases from Galva's messages then go through RevenueCat, and Galva follows RevenueCat's user, so you don't call `identify` yourself. Its README covers the setup.
+**Using RevenueCat?** Declare [`io.galva.sdk:galva-android-revenuecat`](https://github.com/Galva-io/galva-android-revenuecat) instead of `galva-sdk` (it brings it), and add its repository next to this one. Purchases from Galva's messages then go through RevenueCat, and Galva follows RevenueCat's user, so you don't call `identify` yourself. Its README covers the setup.
 
 **Why Play Billing is a separate dependency.** Galva drives purchases started from in-app messages through Play Billing, so it must be on the runtime classpath. Leaving it to your app means you control the exact version. If your app already depends on Play Billing directly or through another library (for example RevenueCat), make sure the resolved version is **8.0.0 or newer**:
 
