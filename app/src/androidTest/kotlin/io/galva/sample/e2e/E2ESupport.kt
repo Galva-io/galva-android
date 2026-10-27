@@ -15,7 +15,7 @@ import androidx.test.runner.lifecycle.Stage
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
-import io.galva.core.protocol.identity.ProfileProperty
+import io.galva.sdk.ProfileProperty
 import io.galva.sample.R
 import io.galva.sdk.Galva
 import org.json.JSONObject
@@ -36,6 +36,7 @@ object ControlPanel {
     }
 
     fun logout() = tap(R.id.logout_button)
+    fun trackEvent() = tap(R.id.track_event_button)
     fun toggleOptOut() = tap(R.id.opt_out_switch)
     fun checkForMessages() = tap(R.id.check_messages_button)
     fun openSampleDeepLink() = tap(R.id.open_deep_link_button)
@@ -94,6 +95,7 @@ object InAppMessage {
     /** The SDK's message activity is internal, so it is matched by name. */
     const val ACTIVITY = "io.galva.sdk.impl.inappmessage.FullScreenInAppMessageActivity"
     private const val CLOSE_LABEL = "Close E2E"
+    private const val BUY_LABEL = "Buy E2E"
     private const val UI_TIMEOUT_MS = 15_000L
 
     /** What the test bundle saw through the bridge, posted to the mock with apiFetch. */
@@ -115,6 +117,19 @@ object InAppMessage {
         awaitLabel(device, CLOSE_LABEL).click()
     }
 
+    /** Taps the page's buy button: a `requestPurchase` for the E2E offer. */
+    fun buyFromPage() {
+        val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+        awaitLabel(device, BUY_LABEL).click()
+    }
+
+    /** The `requestPurchase` answer (result or error) the page posted to the mock. */
+    fun awaitPurchaseReport(communicationId: String): JSONObject =
+        MockBackend.awaitRequest("purchase report (apiFetch) for $communicationId") { request ->
+            request.method == "POST" && request.path == "/e2e/purchase" &&
+                request.json().optJSONObject("messageData")?.optString("communicationId") == communicationId
+        }.json()
+
     // WebView exposes page text as either the node text or its content description.
     private fun awaitLabel(device: UiDevice, label: String): UiObject2 =
         awaitValue("\"$label\" on screen", UI_TIMEOUT_MS) {
@@ -128,10 +143,12 @@ object InAppMessage {
  * once a fresh marker property is uploaded, every earlier event was uploaded too. Needs an app
  * activity in the foreground (the queue pauses in the background) and tracking opted in.
  */
-fun drainSdkQueue() {
+fun drainSdkQueue(timeoutMs: Long = MockBackend.BATCH_TIMEOUT_MS) {
     val marker = UUID.randomUUID().toString()
     Galva.instance.updateProperties(ProfileProperty.Custom(FLUSH_MARKER, marker))
-    MockBackend.awaitBatchMessage("queue flush marker") { it.optJSONObject("traits")?.optString(FLUSH_MARKER) == marker }
+    MockBackend.awaitBatchMessage("queue flush marker", timeoutMs) {
+        it.optJSONObject("traits")?.optString(FLUSH_MARKER) == marker
+    }
 }
 
 fun uniqueId(prefix: String) = "$prefix-${UUID.randomUUID().toString().take(8)}"

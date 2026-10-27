@@ -100,7 +100,7 @@ class DefaultBillingManagerTest {
             })
         factory.create()
         // Verify reflection succeeded — log message captured
-        assertTrue(sinkTest.messages.any { it.contains("Enabled auto service reconnection") })
+        assertTrue(sinkTest.messages.any { it.contains("auto service reconnection enabled") })
     }
 
     @Test
@@ -117,7 +117,7 @@ class DefaultBillingManagerTest {
             }
         )
         factory.create()
-        assertTrue(sinkTest.messages.any { it.contains("Auto service reconnection not supported") })
+        assertTrue(sinkTest.messages.any { it.contains("auto service reconnection not available") })
     }
 
     // ── refresh() ──────────────────────────────────────────────────────────

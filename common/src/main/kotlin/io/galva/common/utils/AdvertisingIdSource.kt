@@ -53,8 +53,7 @@ object AdvertisingIdSource {
 
             null
 
-        } catch (e: Throwable) {
-            e.printStackTrace()
+        } catch (_: Throwable) {
             null
         }
     }

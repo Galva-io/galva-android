@@ -58,12 +58,8 @@ internal class DefaultIdentityManager(
     }
 
     private suspend fun update(block: (Identity) -> Identity) {
-        logger.debug { "Updating start awaitInitialized" }
         awaitInitialized()
         val newState = block(_state.value)
-        logger.debug {
-            "awaitInitialized done: newState $newState"
-        }
         _state.value = newState
         store.save(newState)
     }
@@ -74,15 +70,15 @@ internal class DefaultIdentityManager(
         }
     }
 
-    override suspend fun setPushToken(token: String) {
+    override suspend fun setPushToken(token: String, platform: String) {
         update {
-            it.copy(pushToken = token)
+            it.copy(pushToken = token, pushPlatform = platform)
         }
     }
 
     override suspend fun clearPushToken() {
         update {
-            it.copy(pushToken = null)
+            it.copy(pushToken = null, pushPlatform = null)
         }
     }
 

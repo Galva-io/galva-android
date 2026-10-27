@@ -72,7 +72,7 @@ internal class DefaultBillingManager(
                         handlePurchaseEvent(it)
                     }
                 }
-            }.onFailure { logger.error(it) { "Warm-up connection failed" } }
+            }.onFailure { logger.warn(it) { "Play Billing unavailable; in-app message purchases will fail on this device" } }
         }
     }
 
@@ -95,7 +95,6 @@ internal class DefaultBillingManager(
     override suspend fun loadProducts() = refreshMutex.withLock {
         try {
             val productIds = productIdSource.fetchProductIds()
-            logger.debug { "Fetched ${productIds.size} product ids" }
             if (productIds.isEmpty()) {
                 catalogStore.clear()
                 productDetailsCache.clear()
@@ -103,15 +102,22 @@ internal class DefaultBillingManager(
             }
 
             val details = resolver.resolve(productIds)
-            logger.debug { "Resolved ${details.size} ProductDetails from Play" }
+            val missing = productIds - details.map { it.productId }.toSet()
+            if (missing.isNotEmpty()) {
+                logger.warn {
+                    "Products configured in Galva but not found on Google Play: ${missing.joinToString()}. " +
+                        "Check they are active in Play Console for this app's package name, and that " +
+                        "Play Billing works on this device."
+                }
+            }
             productDetailsCache.replace(details)
 
             val catalog = mapper.map(details)
             catalogStore.replaceAll(catalog)
 
-            logger.info { "Catalog refreshed: ${catalog.products.size} products" }
+            logger.info { "Catalog refreshed: ${catalog.products.size} of ${productIds.size} products available" }
         } catch (t: Throwable) {
-            logger.error(t) { "Catalog refresh failed" }
+            logger.warn(t) { "Catalog refresh failed; keeping the cached catalog" }
         }
     }
 

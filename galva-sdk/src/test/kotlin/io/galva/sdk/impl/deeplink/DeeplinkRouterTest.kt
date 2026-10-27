@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
+import io.galva.common.logger.NoOpLogger
 import io.galva.iam.InAppMessagingManager
 import io.galva.iam.Message
 import io.galva.identity.Identity
@@ -155,6 +156,7 @@ class DeeplinkRouterTest {
             )
         ),
         pendingDeeplinkStore = pendingStore,
+        logger = NoOpLogger,
     )
 }
 
@@ -241,7 +243,7 @@ private class FakeIdentityManager(
 
     override suspend fun updateUserProperties(properties: JsonObject) = Unit
 
-    override suspend fun setPushToken(token: String) = Unit
+    override suspend fun setPushToken(token: String, platform: String) = Unit
 
     override suspend fun clearPushToken() = Unit
 

@@ -1,7 +1,6 @@
 package io.galva.iam
 
 import io.galva.common.InternalGalvaApi
-import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
@@ -44,7 +43,8 @@ abstract class InAppMessageActivity : ComponentActivity(), JSBridgeCallback {
 
     abstract fun getPayloadJsonData(): String?
 
-    abstract fun getHtmlFilePath(): String
+    /** The downloaded bundle to show; null when it is unavailable (the activity then closes). */
+    abstract fun getHtmlFilePath(): String?
 
     /** Query parameters of the deep link that opened this message, exposed as `window.galvaDeepLinkParams`. */
     open fun getDeepLinkParameters(): Map<String, String> = emptyMap()
@@ -52,22 +52,46 @@ abstract class InAppMessageActivity : ComponentActivity(), JSBridgeCallback {
     /** SDK logger; bridge traffic is only logged at DEBUG / VERBOSE. */
     protected open val logger: Logger get() = NoOpLogger
 
-    private lateinit var webView: WebView
+    /** Null when the message could not be set up; the activity then finishes right away. */
+    private var webView: WebView? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         actionBar?.hide()
-        createViews()
+        if (!canShowMessage() || !createViews()) {
+            finish()
+            return
+        }
         configureBackPress()
     }
 
-    private fun createViews() {
-        val bundleUri = Uri.fromFile(File(getHtmlFilePath()))
+    /** False when what the message needs is unavailable (e.g. the SDK is not set up yet). */
+    protected open fun canShowMessage(): Boolean = true
+
+    private fun createViews(): Boolean {
+        val htmlFilePath = getHtmlFilePath()
+        if (htmlFilePath == null) {
+            logger.warn { "In-app message closed: no bundle to show" }
+            return false
+        }
+        val bundleUri = Uri.fromFile(File(htmlFilePath))
+        return try {
+            setContentView(createWebView(bundleUri))
+            true
+        } catch (e: Exception) {
+            // WebView can be missing or mid-update on the device; never crash the host app over it.
+            logger.error(e) { "In-app message closed: WebView unavailable" }
+            false
+        }
+    }
+
+    private fun createWebView(bundleUri: Uri): WebView {
         // Process-wide switch: only turn it on when the host app itself is a debuggable build.
         if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
             WebView.setWebContentsDebuggingEnabled(true)
         }
-        webView = WebView(this).apply {
+        return WebView(this).apply {
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
             )
@@ -92,8 +116,7 @@ abstract class InAppMessageActivity : ComponentActivity(), JSBridgeCallback {
             addJavascriptInterface(JSBridge(this@InAppMessageActivity, logger), "galva")
 
             loadUrl(bundleUri.toString())
-        }
-        setContentView(webView)
+        }.also { webView = it }
     }
 
     /**
@@ -153,26 +176,24 @@ abstract class InAppMessageActivity : ComponentActivity(), JSBridgeCallback {
             this, object : OnBackPressedCallback(true) {
                 override fun handleOnBackPressed() {
 
-                    when {
-                        webView.canGoBack() -> webView.goBack()
-                        else -> finish()
-                    }
+                    val view = webView
+                    if (view != null && view.canGoBack()) view.goBack() else finish()
                 }
             })
     }
 
     override fun onResume() {
         super.onResume()
-        webView.onResume()
+        webView?.onResume()
     }
 
     override fun onPause() {
-        webView.onPause()
+        webView?.onPause()
         super.onPause()
     }
 
     override fun onDestroy() {
-        webView.apply {
+        webView?.apply {
             stopLoading()
             clearHistory()
             removeJavascriptInterface("galva")
@@ -227,8 +248,9 @@ abstract class InAppMessageActivity : ComponentActivity(), JSBridgeCallback {
                 try {
                     startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                     sendMessageToWebView(requestId, JsonPrimitive(true))
-                } catch (_: ActivityNotFoundException) {
-                    logger.warn { "Bridge: no app can open the requested URL" }
+                } catch (e: Exception) {
+                    // ActivityNotFoundException, or a SecurityException from the target app.
+                    logger.warn { "Bridge: the requested URL cannot be opened (${e.javaClass.simpleName})" }
                     sendErrorToWebView(
                         requestId,
                         BridgeError(BridgeError.Code.URL_OPEN_FAILED, "URL cannot be opened"),
@@ -245,7 +267,7 @@ abstract class InAppMessageActivity : ComponentActivity(), JSBridgeCallback {
                     BridgeErrorResponse(requestId = requestId, error = error)
                 )
                 logger.debug { "Bridge out (error): $payload" }
-                webView.evaluateJavascript("window.handleNativeMessage($payload)", null)
+                webView?.evaluateJavascript("window.handleNativeMessage($payload)", null)
             }
         }
     }
@@ -257,7 +279,7 @@ abstract class InAppMessageActivity : ComponentActivity(), JSBridgeCallback {
                     BridgeResponse(result = jsonPayload, requestId = requestId)
                 )
                 logger.verbose { "Bridge out: $payload" }
-                webView.evaluateJavascript("window.handleNativeMessage($payload)", null)
+                webView?.evaluateJavascript("window.handleNativeMessage($payload)", null)
             }
         }
 
@@ -270,7 +292,7 @@ abstract class InAppMessageActivity : ComponentActivity(), JSBridgeCallback {
                     BridgeStringResponse(result = jsonPayload, requestId = requestId)
                 )
                 logger.verbose { "Bridge out: $payload" }
-                webView.evaluateJavascript("window.handleNativeMessage($payload)", null)
+                webView?.evaluateJavascript("window.handleNativeMessage($payload)", null)
             }
         }
 

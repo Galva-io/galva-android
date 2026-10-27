@@ -77,7 +77,6 @@ internal class DefaultBatchSender(
             }
         }
         return runCatching { JsonUtils.defaultJson.decodeFromString(serializer, operation.payload) }
-            .onSuccess { logger.verbose { "Decoded ${operation.type}: $it" } }
             .onFailure { logger.error(it) { "Dropping operation ${operation.id}: cannot decode ${operation.type}" } }
             .getOrNull()
     }

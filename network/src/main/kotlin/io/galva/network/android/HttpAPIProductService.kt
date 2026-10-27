@@ -30,21 +30,13 @@ class HttpAPIProductService(
                     .query("page", request.page)
                     .query("status", request.status)
                     .build()
-            logger.info {
-                "getProducts request: ${request.url}, headers: ${request.headers}"
-            }
             httpClient.execute(request).toServiceResult { responseJson ->
                 json.decodeFromString<ListProductResponse>(responseJson)
             }
         } catch (e: NetworkError) {
-            logger.error {
-                "getProducts failed with NetworkError: ${e.message}, cause: ${e.cause?.message}"
-            }
             ServiceResult.Error(e)
         } catch (e: Exception) {
-            logger.error {
-                "getProducts failed with Exception: ${e.message}, cause: ${e.cause?.message}"
-            }
+            logger.error(e) { "getProducts failed" }
             ServiceResult.UnknownError(e)
         }
     }

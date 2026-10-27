@@ -10,33 +10,92 @@ import androidx.lifecycle.viewModelScope
 import io.galva.billing.BillingManager
 import io.galva.billing.model.OfferWithPhasesModel
 import io.galva.billing.model.PricingPhase
+import io.galva.common.logger.Logger
 import io.galva.common.utils.AppInfoSource
 import io.galva.common.utils.HashUtils
-import io.galva.common.utils.JsonUtils
 import io.galva.iam.PageContext
 import io.galva.iam.SafeArea
+import io.galva.iam.bridge.BridgeError
+import io.galva.iam.bridge.BridgeException
+import io.galva.iam.bridge.PurchaseRequest
 import io.galva.network.request.APIFetchRequest
 import io.galva.network.response.APIFetchResult
 import io.galva.network.service.IAMService
 import io.galva.network.service.ServiceResult
 import io.galva.sdk.Galva
+import io.galva.sdk.GalvaIntegrationApi
+import io.galva.sdk.GalvaPurchaseController
+import io.galva.sdk.GalvaPurchaseException
+import io.galva.sdk.GalvaPurchaseRequest
+import io.galva.sdk.GalvaPurchaseResult
+import io.galva.sdk.impl.billing.PlayBillingPurchase
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonObject
 import java.util.Locale
 
 internal class InAppMessageViewModel(
     private val billingManager: BillingManager,
-    private val iamService: IAMService
+    private val iamService: IAMService?,
+    private val purchaseController: () -> GalvaPurchaseController? = { Galva.instance.purchaseController },
+    private val logger: Logger = Galva.instance.logger,
 ) : ViewModel() {
-    fun launchBillingFlow(activity: Activity, productId: String, basePlanId: String, offerId: String?) =
-        billingManager.launchBilling(
+
+    /**
+     * Runs a purchase the message requested, through the installed [GalvaPurchaseController] or
+     * else the built-in Play Billing flow, and returns the bridge answer. The controller runs on
+     * the main thread, like the iOS SDK's `@MainActor` controller.
+     */
+    @OptIn(GalvaIntegrationApi::class)
+    suspend fun purchase(activity: Activity, request: PurchaseRequest, messageId: String): Result<JsonObject> {
+        val galvaRequest = GalvaPurchaseRequest(
             activity = activity,
-            productId = productId,
-            basePlanId = basePlanId,
-            offerId = offerId,
-            obfuscatedAccountId = purchaseAccountId()
+            productId = request.productId,
+            basePlanId = request.basePlanId,
+            offerId = request.offerId,
+            obfuscatedAccountId = purchaseAccountId(),
+            messageId = messageId,
+            playBillingPurchase = { purchaseWithPlayBilling(activity, request) },
+        )
+        val controller = purchaseController()
+        val product = "${request.productId}/${request.basePlanId}" + (request.offerId?.let { "/$it" } ?: "")
+        logger.info { "Purchase of $product requested via ${controller?.javaClass?.simpleName ?: "Play Billing"}" }
+        return try {
+            val result = withContext(Dispatchers.Main.immediate) {
+                controller?.purchase(galvaRequest) ?: galvaRequest.purchaseWithPlayBilling()
+            }
+            logger.info {
+                when (result) {
+                    is GalvaPurchaseResult.Completed -> "Purchase of $product completed (order ${result.transaction.orderId})"
+                    GalvaPurchaseResult.Pending -> "Purchase of $product pending: payment not finished yet"
+                    GalvaPurchaseResult.Cancelled -> "Purchase of $product cancelled by the user"
+                }
+            }
+            Result.success(PurchaseBridgeMapper.result(result, request))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: GalvaPurchaseException) {
+            logger.warn { "Purchase of $product failed: ${e.javaClass.simpleName} (${e.message})" }
+            Result.failure(BridgeException(PurchaseBridgeMapper.error(e)))
+        } catch (e: Exception) {
+            logger.error(e) { "Purchase of ${request.productId} failed" }
+            Result.failure(BridgeException(BridgeError(BridgeError.Code.PURCHASE_FAILED, e.message ?: e.toString())))
+        }
+    }
+
+    private suspend fun purchaseWithPlayBilling(activity: Activity, request: PurchaseRequest): GalvaPurchaseResult =
+        PlayBillingPurchase.await(
+            billingManager.launchBilling(
+                activity = activity,
+                productId = request.productId,
+                basePlanId = request.basePlanId,
+                offerId = request.offerId,
+                obfuscatedAccountId = purchaseAccountId(),
+            ),
+            offerRequested = request.offerId != null,
         )
 
     /** Value attached to Play purchases: the identity's obfuscatedAccountId, hashed. */
@@ -48,7 +107,15 @@ internal class InAppMessageViewModel(
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
-            _storefrontCountryCode = billingManager.getStorefrontCountryCode()
+            // A prefetch: on failure getPageContext asks again.
+            _storefrontCountryCode = try {
+                billingManager.getStorefrontCountryCode()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.debug { "Storefront country prefetch failed: ${e.message}" }
+                null
+            }
         }
     }
 
@@ -73,8 +140,8 @@ internal class InAppMessageViewModel(
     }
 
     suspend fun doApiFetch(apiFetchRequest: APIFetchRequest): ServiceResult<APIFetchResult> {
-        val response = iamService.apiFetch(apiFetchRequest)
-        return response
+        return iamService?.apiFetch(apiFetchRequest)
+            ?: ServiceResult.UnknownError(IllegalStateException("Galva is not set up"))
     }
 
     @kotlinx.serialization.InternalSerializationApi
@@ -83,7 +150,7 @@ internal class InAppMessageViewModel(
     ): ProductWithOfferPrice? {
         val product = billingManager.getProductCatalog(productId)
         if (product == null) {
-            Galva.instance.logger.debug { "getProductPrice: product $productId is not in the catalog" }
+            logger.debug { "getProductPrice: product $productId is not in the catalog" }
             return null
         }
         val basePlan = product.basePlans.firstOrNull {

@@ -14,13 +14,15 @@ For problems resolving or compiling the dependency, see [Installation problems](
 
 ---
 
-## `IllegalStateException: Galva not configured`
+## Galva does nothing at all
 
-A Galva API that needs the configured SDK (`currentUserId`, `getInAppMessage()`, `billingManager`, …) was used before `Galva.configure(...)`.
+The SDK never throws at your app; when it cannot run, it logs an **error** and stays off. Look for these lines in Logcat (they are logged even at the default `WARN` level):
 
-- Configure from `Application.onCreate()`, not from an activity.
-- Make sure the `Application` subclass is registered with `android:name` in the manifest.
-- Code that can run before `onCreate` finishes (content providers, `androidx.startup` initializers) must not call Galva.
+- `Galva.configure() ignored: apiKey is blank`: the key in `Configuration` is empty, often a missing build property on CI.
+- `sdk/initialize rejected with HTTP 401`: the key is wrong or belongs to another environment.
+- `Galva SDK requires Play Billing 8.0+`: everything works except purchases inside messages.
+
+Calls made before `Galva.configure(...)` are not lost: they are queued and run once the SDK is set up. Still, configure from `Application.onCreate()` (with the `Application` subclass registered via `android:name`), not from an activity, so in-app messages and deep links are ready early.
 
 ## Nothing is sent to the backend
 
@@ -74,6 +76,7 @@ Galva's backend acknowledges purchases made inside a message, but your app decid
 - Is the token registered? `setPushToken` must be called from `onNewToken` **and** with the current token on start-up.
 - Is `handlePush(message.data)` called from `onMessageReceived` for Galva messages (`isGalvaNotification(message.data)` returns `true`)?
 - Has the user disabled the **"Galva SDK Notifications"** channel in system settings?
+- A `$gv_notification_presented` event is sent only for notifications that were actually posted; if it is missing for a push, one of the checks above blocked it.
 - Notification shows a white square: set the `io.galva.sdk.default_notification_icon` meta-data to a monochrome drawable (see [Push notifications](integration-guide.md#4-icon-and-color-recommended)).
 
 ## Collecting a support report

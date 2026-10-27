@@ -46,6 +46,22 @@ android {
                 "proguard-rules.pro"
             )
         }
+        // Release code (R8, not debuggable) that profilers may attach to, with the performance probe;
+        // installs next to the debug app. See scripts/profile.sh.
+        create("profiling") {
+            initWith(getByName("release"))
+            isMinifyEnabled = true
+            proguardFiles("proguard-profiling.pro")
+            applicationIdSuffix = ".profiling"
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += "release"
+        }
+    }
+
+    // The performance probe (src/perf) ships in debug (perf suite) and profiling builds only.
+    sourceSets {
+        getByName("debug").kotlin.srcDir("src/perf/kotlin")
+        getByName("profiling").kotlin.srcDir("src/perf/kotlin")
     }
 }
 

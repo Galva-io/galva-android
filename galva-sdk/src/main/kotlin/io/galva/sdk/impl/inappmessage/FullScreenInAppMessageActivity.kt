@@ -23,8 +23,8 @@ import io.galva.network.request.APIFetchRequest
 import io.galva.network.response.APIFetchResult
 import io.galva.network.service.ServiceResult
 import io.galva.sdk.Galva
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
@@ -42,6 +42,17 @@ internal class FullScreenInAppMessageActivity : InAppMessageActivity() {
     })
 
     private var alertDialog: AlertDialog? = null
+
+    /** Bridge work never crashes the app: a failure is logged and the request left unanswered. */
+    private val guard = CoroutineExceptionHandler { _, t -> logger.error(t) { "In-app message bridge call failed" } }
+
+    /**
+     * After process death Android may recreate this activity before Galva is set up again; there
+     * is no message state to restore then, so it closes instead of failing.
+     */
+    override fun canShowMessage(): Boolean = (Galva.instance.iamService != null).also { ready ->
+        if (!ready) logger.info { "In-app message closed: Galva is not set up" }
+    }
 
     companion object {
         private const val EXTRA_MESSAGE_ID = "message_id"
@@ -76,10 +87,7 @@ internal class FullScreenInAppMessageActivity : InAppMessageActivity() {
         return bundle.keySet().mapNotNull { key -> bundle.getString(key)?.let { key to it } }.toMap()
     }
 
-    override fun getHtmlFilePath(): String {
-        return intent.getStringExtra(EXTRA_HTML_FILE_PATH)
-            ?: throw IllegalArgumentException("HTML file path is required")
-    }
+    override fun getHtmlFilePath(): String? = intent.getStringExtra(EXTRA_HTML_FILE_PATH)
 
     override fun onDestroy() {
         alertDialog?.dismiss()
@@ -92,7 +100,7 @@ internal class FullScreenInAppMessageActivity : InAppMessageActivity() {
     }
 
     override fun onGetPageContext(requestId: String) {
-        viewModel.viewModelScope.launch(Dispatchers.IO) {
+        viewModel.viewModelScope.launch(Dispatchers.IO + guard) {
             val windowInsets = ViewCompat.getRootWindowInsets(window.decorView)
             val insets = windowInsets?.getInsets(WindowInsetsCompat.Type.systemBars())
             val pageContext =
@@ -104,27 +112,19 @@ internal class FullScreenInAppMessageActivity : InAppMessageActivity() {
     }
 
     override fun onRequestPurchase(requestId: String, request: PurchaseRequest) {
-        viewModel.viewModelScope.launch(Dispatchers.IO) {
-            viewModel.launchBillingFlow(
-                this@FullScreenInAppMessageActivity,
-                request.productId,
-                request.basePlanId,
-                request.offerId,
-            ).collectLatest { state ->
-                val answer = PurchaseBridgeMapper.map(state, request) ?: return@collectLatest
-                withContext(Dispatchers.Main.immediate) {
-                    if (isDestroyed || isFinishing) return@withContext
-                    answer.fold(
-                        onSuccess = { sendMessageToWebView(requestId, it) },
-                        onFailure = { sendErrorToWebView(requestId, (it as BridgeException).error) },
-                    )
-                }
-            }
+        val messageId = intent.getStringExtra(EXTRA_MESSAGE_ID).orEmpty()
+        viewModel.viewModelScope.launch(guard) {
+            val answer = viewModel.purchase(this@FullScreenInAppMessageActivity, request, messageId)
+            if (isDestroyed || isFinishing) return@launch
+            answer.fold(
+                onSuccess = { sendMessageToWebView(requestId, it) },
+                onFailure = { sendErrorToWebView(requestId, (it as BridgeException).error) },
+            )
         }
     }
 
     override fun onGetProductPrice(requestId: String, request: ProductPriceRequest) {
-        viewModel.viewModelScope.launch(Dispatchers.IO) {
+        viewModel.viewModelScope.launch(Dispatchers.IO + guard) {
             val productPrice = viewModel.getProductPrice(request.productId, request.basePlanId, request.offerId)
             val jsonPayload = JsonUtils.defaultJson.encodeToJsonElement(productPrice)
             withContext(Dispatchers.Main) {
@@ -139,16 +139,17 @@ internal class FullScreenInAppMessageActivity : InAppMessageActivity() {
      * acknowledged right away with `{ queued: true }`.
      */
     override fun onDoApiFetch(requestId: String, payload: APIFetchRequest) {
-        if (!Galva.instance.iamService.isValidPath(payload.path)) {
+        if (Galva.instance.iamService?.isValidPath(payload.path) != true) {
             sendErrorToWebView(
                 requestId,
                 BridgeError(BridgeError.Code.INVALID_PAYLOAD, "apiFetch path is invalid or targets a disallowed origin"),
             )
             return
         }
-        viewModel.viewModelScope.launch(Dispatchers.IO) {
+        viewModel.viewModelScope.launch(Dispatchers.IO + guard) {
             if (payload.shouldRetry) {
-                val queued = runCatching { Galva.instance.apiFetchQueue.enqueue(payload) }
+                val queue = Galva.instance.apiFetchQueue
+                val queued = queue != null && runCatching { queue.enqueue(payload) }
                     .onFailure { logger.error(it) { "apiFetch: could not persist request" } }
                     .isSuccess
                 withContext(Dispatchers.Main) {
@@ -190,7 +191,14 @@ internal class FullScreenInAppMessageActivity : InAppMessageActivity() {
 
     override fun onShowAlert(requestId: String, option: ShowAlertOptions) {
         lifecycleScope.launch(Dispatchers.Main) {
-            showAlertDialog(requestId, option)
+            if (isFinishing || isDestroyed) return@launch
+            try {
+                showAlertDialog(requestId, option)
+            } catch (e: Exception) {
+                // e.g. BadTokenException when the window went away meanwhile.
+                logger.warn(e) { "showAlert: could not show the dialog" }
+                sendErrorToWebView(requestId, BridgeError(BridgeError.Code.NO_ACTIVE_MESSAGE, "Alert could not be shown"))
+            }
         }
     }
 

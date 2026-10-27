@@ -77,33 +77,6 @@ dependencyResolutionManagement {
 }
 ```
 
-<details>
-<summary>Groovy (<code>settings.gradle</code>)</summary>
-
-```groovy
-dependencyResolutionManagement {
-    repositories {
-        google()
-        mavenCentral()
-        maven {
-            name = "GalvaGitHubPackages"
-            url = uri("https://maven.pkg.github.com/Galva-io/galva-android")
-            credentials {
-                username = settings.providers.gradleProperty("gpr.user")
-                        .orElse(settings.providers.environmentVariable("GPR_USER")).getOrNull()
-                password = settings.providers.gradleProperty("gpr.key")
-                        .orElse(settings.providers.environmentVariable("GPR_KEY")).getOrNull()
-            }
-            content { includeGroup("io.galva.sdk") }
-        }
-    }
-}
-```
-
-</details>
-
-> If your project still declares repositories in the root `build.gradle(.kts)` (`allprojects { repositories { … } }`), add the same `maven { … }` block there instead.
-
 ---
 
 ## 2. Add the dependencies
@@ -119,7 +92,7 @@ dependencies {
 }
 ```
 
-Replace `<version>` with the version you were given (or the latest one listed under the repository's **Packages** tab on GitHub, e.g. `1.2.0-SNAPSHOT`).
+Replace `<version>` with the version you were given (or the latest one listed under the repository's **Packages** tab on GitHub, e.g. `1.3.0-SNAPSHOT`).
 
 `galva-sdk` is the only artifact you declare. It brings the internal modules (`core`, `identity`, `network`, `inapp-message`, `billing`, …) in transitively — do not add them yourself.
 
@@ -141,10 +114,10 @@ Configure Galva **once**, from `Application.onCreate()`, on the main thread:
 
 ```kotlin
 import android.app.Application
-import io.galva.common.logger.LogLevel
-import io.galva.core.protocol.Configuration
-import io.galva.core.protocol.Environment
+import io.galva.sdk.Configuration
+import io.galva.sdk.Environment
 import io.galva.sdk.Galva
+import io.galva.sdk.LogLevel
 
 class MyApp : Application() {
     override fun onCreate() {
@@ -262,6 +235,5 @@ Remove `mavenLocal()` again when you are done — it is easy to ship a stale loc
 | `Could not find io.galva.sdk:galva-sdk:<version>` | The version does not exist, or the repository block is missing / has a `content { }` filter that excludes `io.galva.sdk`. |
 | `Dependency 'io.galva.sdk:…' requires libraries and applications that depend on it to compile against version 36 or later` | Raise `compileSdk` to 36. |
 | `Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 1.9.0` | Upgrade your project's Kotlin Gradle plugin to 2.1 or newer. |
-| `NoClassDefFoundError: com/android/billingclient/api/…` at startup | Add `com.android.billingclient:billing-ktx:8.0.0` (or newer) to your app. |
-| Logcat shows `Detected Play Billing version …, but Galva SDK requires 8.0+` | Another dependency forces an older Play Billing. Use `dependencyInsight` (above) and align it to 8.0.0+. |
-| `IllegalStateException: Galva not configured` | A Galva API was used before `Galva.configure(...)`. Configure from `Application.onCreate()`. |
+| Logcat shows `Galva SDK requires Play Billing 8.0+, but the app has …` | Purchases inside messages fail until you add `com.android.billingclient:billing-ktx:8.0.0` (or newer), or align the version another dependency forces (`dependencyInsight`, above). The rest of the SDK keeps working. |
+| Logcat shows `Galva.configure() ignored: apiKey is blank` | The `apiKey` passed to `Configuration` is empty, often a build property missing on CI. Galva stays off; your app is not affected. |

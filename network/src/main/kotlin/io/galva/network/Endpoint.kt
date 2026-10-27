@@ -4,7 +4,7 @@ import io.galva.common.InternalGalvaApi
 
 /**
  * Names the SDK's known API endpoints. Concrete URLs are resolved at call time
- * using the base URL from [Configuration] — so the same endpoint switches between
+ * using the base URL of the configured environment — so the same endpoint switches between
  * production, staging, or EU regions without code changes.
  */
 @InternalGalvaApi

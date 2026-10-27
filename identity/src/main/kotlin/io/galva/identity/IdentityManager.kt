@@ -22,7 +22,7 @@ interface IdentityManager {
 
     suspend fun updateUserProperties(properties: JsonObject)
 
-    suspend fun setPushToken(token: String)
+    suspend fun setPushToken(token: String, platform: String)
 
     suspend fun clearPushToken()
 

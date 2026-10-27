@@ -10,6 +10,7 @@ coreKtx = "1.18.0"
 junit = "4.13.2"
 kotlinxCoroutines = "1.11.0"
 kover = "0.9.8"
+binaryCompatibilityValidator = "0.18.2"
 robolectric = "4.16.1"
 coreKtxVersion = "1.7.0"
 datastore = "1.2.1"
@@ -67,6 +68,7 @@ androidx-test-uiautomator = { group = "androidx.test.uiautomator", name = "uiaut
 android-application = {id = "com.android.application" ,version.ref = "agp"}
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover"}
+kotlinx-binary-compatibility-validator = { id = "org.jetbrains.kotlinx.binary-compatibility-validator", version.ref = "binaryCompatibilityValidator" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 vanniktech-maven-publish = {id = "com.vanniktech.maven.publish",version.ref = "vanniktech"}
 

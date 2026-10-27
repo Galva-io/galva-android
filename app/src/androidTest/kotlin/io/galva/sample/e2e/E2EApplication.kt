@@ -5,9 +5,9 @@ import android.os.Debug
 import android.os.SystemClock
 import android.util.Log
 import android.webkit.WebSettings
-import io.galva.common.logger.LogLevel
-import io.galva.core.protocol.Configuration
-import io.galva.core.protocol.Environment
+import io.galva.sdk.LogLevel
+import io.galva.sdk.Configuration
+import io.galva.sdk.Environment
 import io.galva.sdk.Galva
 import java.util.Locale
 
@@ -15,6 +15,7 @@ import java.util.Locale
 class E2EApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        if (E2ETestRunner.performanceRun) return
         val configuration = Configuration(
             apiKey = MockBackend.API_KEY,
             logLevel = LogLevel.VERBOSE,

@@ -1,12 +1,10 @@
 package io.galva.sdk.impl.inappmessage
 
-import com.android.billingclient.api.BillingClient.BillingResponseCode
-import io.galva.billing.model.BillingLaunchState
-import io.galva.billing.model.BillingLaunchState.FailureKind
 import io.galva.common.utils.DateTimeFormatUtils
 import io.galva.iam.bridge.BridgeError
-import io.galva.iam.bridge.BridgeException
 import io.galva.iam.bridge.PurchaseRequest
+import io.galva.sdk.GalvaPurchaseException
+import io.galva.sdk.GalvaPurchaseResult
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -14,64 +12,49 @@ import kotlinx.serialization.json.put
 import java.util.Calendar
 
 /**
- * Turns billing states into `requestPurchase` answers with the iOS SDK's contract: `completed`,
- * `pending` and `cancelled` are results; everything else is a [BridgeError] with the matching code.
+ * Turns purchase outcomes into `requestPurchase` answers with the iOS SDK's contract: results for
+ * `completed`, `pending` and `cancelled`, a [BridgeError] with the matching code for failures. The
+ * answer has the same shape whether the built-in Play flow or a purchase controller ran it.
  */
 internal object PurchaseBridgeMapper {
 
-    /** The answer for a terminal [state], or null while the flow is still running. */
-    fun map(state: BillingLaunchState, request: PurchaseRequest): Result<JsonObject>? = when (state) {
-        is BillingLaunchState.Launching, is BillingLaunchState.Showing -> null
-        is BillingLaunchState.Pending -> Result.success(outcome("pending"))
-        is BillingLaunchState.Cancelled -> Result.success(outcome("cancelled"))
-        is BillingLaunchState.Completed -> Result.success(completed(state, request))
-        is BillingLaunchState.Failed -> Result.failure(BridgeException(error(state, request)))
+    fun result(result: GalvaPurchaseResult, request: PurchaseRequest): JsonObject = when (result) {
+        GalvaPurchaseResult.Pending -> outcome("pending")
+        GalvaPurchaseResult.Cancelled -> outcome("cancelled")
+        is GalvaPurchaseResult.Completed -> completed(result, request)
     }
 
-    fun error(state: BillingLaunchState.Failed, request: PurchaseRequest): BridgeError {
-        val offerRequested = request.offerId != null
-        val code = when (state.kind) {
-            FailureKind.PRODUCT_NOT_FOUND -> BridgeError.Code.PRODUCT_UNAVAILABLE
-            // Play only lists the offers a user is eligible for.
-            FailureKind.OFFER_NOT_FOUND ->
-                if (offerRequested) BridgeError.Code.INELIGIBLE_FOR_OFFER else BridgeError.Code.PRODUCT_UNAVAILABLE
-
-            FailureKind.NOT_CONNECTED -> BridgeError.Code.NETWORK_ERROR
-            FailureKind.TIMEOUT -> BridgeError.Code.TIMEOUT
-            FailureKind.BILLING -> when (state.responseCode) {
-                BillingResponseCode.ITEM_UNAVAILABLE -> BridgeError.Code.PRODUCT_UNAVAILABLE
-                BillingResponseCode.BILLING_UNAVAILABLE,
-                BillingResponseCode.FEATURE_NOT_SUPPORTED -> BridgeError.Code.PURCHASE_NOT_ALLOWED
-
-                BillingResponseCode.SERVICE_UNAVAILABLE,
-                BillingResponseCode.NETWORK_ERROR,
-                BillingResponseCode.SERVICE_DISCONNECTED -> BridgeError.Code.NETWORK_ERROR
-
-                // Invalid launch arguments; with an offer that is almost always a bad offer token.
-                BillingResponseCode.DEVELOPER_ERROR ->
-                    if (offerRequested) BridgeError.Code.INVALID_OFFER else BridgeError.Code.PURCHASE_FAILED
-
-                else -> BridgeError.Code.PURCHASE_FAILED
-            }
+    fun error(failure: GalvaPurchaseException): BridgeError {
+        val code = when (failure) {
+            is GalvaPurchaseException.ProductUnavailable -> BridgeError.Code.PRODUCT_UNAVAILABLE
+            is GalvaPurchaseException.PurchaseNotAllowed -> BridgeError.Code.PURCHASE_NOT_ALLOWED
+            is GalvaPurchaseException.IneligibleForOffer -> BridgeError.Code.INELIGIBLE_FOR_OFFER
+            is GalvaPurchaseException.NotAvailableInStorefront -> BridgeError.Code.NOT_AVAILABLE_IN_STOREFRONT
+            is GalvaPurchaseException.InvalidOffer -> BridgeError.Code.INVALID_OFFER
+            is GalvaPurchaseException.VerificationFailed -> BridgeError.Code.VERIFICATION_FAILED
+            is GalvaPurchaseException.NetworkError -> BridgeError.Code.NETWORK_ERROR
+            is GalvaPurchaseException.Timeout -> BridgeError.Code.TIMEOUT
+            is GalvaPurchaseException.Failed -> BridgeError.Code.PURCHASE_FAILED
         }
-        return BridgeError(code, state.reason)
+        return BridgeError(code, failure.message.orEmpty())
     }
 
     private fun outcome(value: String) = buildJsonObject { put("outcome", value) }
 
-    private fun completed(state: BillingLaunchState.Completed, request: PurchaseRequest) = buildJsonObject {
+    private fun completed(result: GalvaPurchaseResult.Completed, request: PurchaseRequest) = buildJsonObject {
+        val transaction = result.transaction
         put("outcome", "completed")
         put("transaction", buildJsonObject {
-            put("id", state.orderId)
+            put("id", transaction.orderId)
             put("productId", request.productId)
             put("basePlanId", request.basePlanId)
             put("offerId", request.offerId)
             put(
                 "purchaseDate",
-                DateTimeFormatUtils.format(Calendar.getInstance().apply { timeInMillis = state.purchaseTimestamp })
+                DateTimeFormatUtils.format(Calendar.getInstance().apply { timeInMillis = transaction.purchaseTime })
             )
-            put("verified", state.verified)
-            state.obfuscatedAccountId?.let { put("appAccountToken", JsonPrimitive(it)) }
+            put("verified", transaction.acknowledged)
+            transaction.obfuscatedAccountId?.let { put("appAccountToken", JsonPrimitive(it)) }
         })
     }
 }

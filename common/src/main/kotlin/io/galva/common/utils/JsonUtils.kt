@@ -10,7 +10,13 @@ import kotlinx.serialization.json.JsonPrimitive
 
 @InternalGalvaApi
 object JsonUtils {
-    fun convertObjectToJsonElement(valueObject :Any?): JsonElement {
+    /** Deeper nesting becomes null: it also stops a map that contains itself. */
+    private const val MAX_DEPTH = 32
+
+    fun convertObjectToJsonElement(valueObject: Any?): JsonElement = convert(valueObject, depth = 0)
+
+    private fun convert(valueObject: Any?, depth: Int): JsonElement {
+        if (depth > MAX_DEPTH) return JsonNull
         return when (valueObject) {
             null -> JsonNull
 
@@ -24,16 +30,16 @@ object JsonUtils {
 
             is Map<*, *> -> JsonObject(
                 valueObject.entries.associate { (k, v) ->
-                    k.toString() to convertObjectToJsonElement(v)
+                    k.toString() to convert(v, depth + 1)
                 }
             )
 
             is Iterable<*> -> JsonArray(
-                valueObject.map { convertObjectToJsonElement(it) }
+                valueObject.map { convert(it, depth + 1) }
             )
 
             is Array<*> -> JsonArray(
-                valueObject.map { convertObjectToJsonElement(it) }
+                valueObject.map { convert(it, depth + 1) }
             )
 
             is Enum<*> -> JsonPrimitive(valueObject.name)

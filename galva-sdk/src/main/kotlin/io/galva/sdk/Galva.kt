@@ -9,20 +9,15 @@ import androidx.annotation.VisibleForTesting
 import io.galva.billing.BillingManager
 import io.galva.common.lifecycle.AppLifecycleObserver
 import io.galva.common.lifecycle.AppLifecycleState
-import io.galva.common.logger.LogLevel
-import io.galva.common.logger.LogSink
+import io.galva.common.logger.LogLevel as InternalLogLevel
 import io.galva.common.logger.Logger
 import io.galva.common.utils.AppInfoSource
-import io.galva.common.utils.DateTimeFormatUtils
 import io.galva.common.utils.EmailValidator
 import io.galva.common.utils.NotificationUtils
 import io.galva.common.utils.PlayBillingVersion
-import io.galva.core.protocol.Configuration
-import io.galva.core.protocol.identity.ProfileProperty
 import io.galva.core.protocol.operation.APIOperation
 import io.galva.core.protocol.operation.OperationManager
 import io.galva.iam.InAppMessagingManager
-import io.galva.iam.Message
 import io.galva.iam.bundle.WebViewBundleCache
 import io.galva.iam.bundle.WebViewBundleDownloader
 import io.galva.iam.bundle.WebViewBundleResolver
@@ -38,7 +33,9 @@ import io.galva.operation_queue.policy.SizeOrTimeoutBatchPolicy
 import io.galva.sdk.impl.billing.DefaultBillingManager
 import io.galva.sdk.impl.billing.DeferredBillingManager
 import io.galva.sdk.impl.billing.GalvaProductIdSource
+import io.galva.sdk.impl.billing.UnavailableBillingManager
 import io.galva.sdk.impl.deeplink.DeeplinkOpenCommunicationRouterHandler
+import io.galva.sdk.impl.event.EventAttributes
 import io.galva.sdk.impl.deeplink.DeeplinkRouter
 import io.galva.sdk.impl.deeplink.LocalPendingDeeplinkStore
 import io.galva.sdk.impl.identity.DefaultIdentityManager
@@ -46,14 +43,18 @@ import io.galva.sdk.impl.inappmessage.AndroidAppLifecycleObserver
 import io.galva.sdk.impl.inappmessage.ApiFetchDurableQueue
 import io.galva.sdk.impl.inappmessage.DefaultInAppMessagingManager
 import io.galva.sdk.impl.inappmessage.InAppMessageAutoDisplay
+import io.galva.sdk.impl.inappmessage.NotificationEvents
 import io.galva.sdk.impl.inappmessage.ScreenMessageOverlay
 import io.galva.sdk.impl.inappmessage.SdkNotificationHandler
+import io.galva.sdk.impl.integration.PrefixedIntegrationLogger
 import io.galva.sdk.impl.operation.DefaultOperationManager
 import io.galva.sdk.impl.session.SdkSettings
 import io.galva.sdk.impl.session.SessionTracker
 import io.galva.sdk.impl.store.SdkInitializeConfigStore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
@@ -63,13 +64,14 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.plus
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.io.File
-import java.util.Calendar
 import java.util.Locale
 import kotlin.math.max
 import kotlin.time.Duration.Companion.milliseconds
@@ -81,8 +83,13 @@ import kotlin.time.Duration.Companion.seconds
  */
 public class Galva @VisibleForTesting internal constructor(
     internal val logger: Logger,
-    private val galvaScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
 ) {
+    /** SDK work never crashes the app: anything that escapes a coroutine is logged and dropped. */
+    private val galvaScope: CoroutineScope = scope + CoroutineExceptionHandler { _, t ->
+        logger.error(t) { "Unexpected SDK error (ignored)" }
+    }
+
     @Volatile
     private var config: Configuration? = null
 
@@ -113,6 +120,12 @@ public class Galva @VisibleForTesting internal constructor(
     @Volatile
     private var sessionTracker: SessionTracker? = null
 
+    @Volatile
+    private var _purchaseController: GalvaPurchaseController? = null
+
+    /** Runs the purchases in-app messages request; null for the built-in Play Billing flow. */
+    internal val purchaseController: GalvaPurchaseController? get() = _purchaseController
+
     /** Latest [setOptOut] value; null until called, then [isOptedOut] reads the persisted flag. */
     @Volatile
     private var optOutOverride: Boolean? = null
@@ -134,68 +147,70 @@ public class Galva @VisibleForTesting internal constructor(
 
     public val isConfigured: Boolean get() = config != null
 
-    internal val configuration: Configuration
-        get() = config ?: error("Galva not configured. Call Galva.instance.configure(...) first.")
-    internal val operationManager: OperationManager
-        get() = _operationManager
-            ?: error("Galva not configured. Call Galva.instance.configure(...) first.")
-    internal val identity: IdentityManager
-        get() = identityManager
-            ?: error("Galva not configured. Call Galva.instance.configure(...) first.")
-
-    internal val inAppMessageManager: InAppMessagingManager
-        get() = _inAppMessageManager
-            ?: error("Galva not configured. Call Galva.instance.configure(...) first.")
 
     /**
      * Play Billing catalog and purchases used by in-app messages. Usable right after [configure];
      * calls are forwarded once the Play billing client has been set up in the background.
      */
-    public val billingManager: BillingManager by lazy { DeferredBillingManager(billingManagerReady, galvaScope) }
+    internal val billingManager: BillingManager by lazy { DeferredBillingManager(billingManagerReady, galvaScope) }
 
-    internal val sdkNotificationHandler: SdkNotificationHandler
-        get() = _sdkNotificationHandler
-            ?: error("Galva not configured. Call Galva.instance.configure(...) first.")
+    /**
+     * Runs the purchases in-app messages request through [controller] instead of the SDK's
+     * built-in Play Billing flow; null restores the built-in flow.
+     *
+     * Safe to call at any time, before or after [configure]; it applies to the next purchase a
+     * message requests. The last controller set wins, including one an integration installs
+     * (e.g. `GalvaIntegration.revenueCat()`), so don't combine the two.
+     */
+    public fun setPurchaseController(controller: GalvaPurchaseController?) {
+        _purchaseController = controller
+        logger.info { "Purchase controller set: ${controller?.javaClass?.name ?: "built-in Play Billing"}" }
+    }
 
-    private val deeplinkRouter: DeeplinkRouter
-        get() = _deeplinkRouter
-            ?: error("Galva not configured. Call Galva.instance.configure(...) first.")
+    /** apiFetch proxy used by in-app message bundles; null until the SDK is set up. */
+    internal val iamService: IAMService? get() = _iamService
 
-    /** apiFetch proxy used by in-app message bundles. */
-    internal val iamService: IAMService
-        get() = _iamService
-            ?: error("Galva not configured. Call Galva.instance.configure(...) first.")
-
-    /** Persistent queue for apiFetch calls marked `shouldRetry`. */
-    internal val apiFetchQueue: ApiFetchDurableQueue
-        get() = _apiFetchQueue
-            ?: error("Galva not configured. Call Galva.instance.configure(...) first.")
+    /** Persistent queue for apiFetch calls marked `shouldRetry`; null until the SDK is set up. */
+    internal val apiFetchQueue: ApiFetchDurableQueue? get() = _apiFetchQueue
 
     private fun startProcessingGalvaEvents() {
         galvaScope.launch(Dispatchers.IO) {
             for (event in channel) {
-                when (event) {
-                    is GalvaEvent.Identify -> identifyInternal(
-                        event.userId, event.email, event.obfuscatedAccountId
-                    )
-
-                    is GalvaEvent.SetPushToken -> setPushTokenInternal(event.token)
-                    is GalvaEvent.ClearPushToken -> clearPushTokenInternal()
-                    is GalvaEvent.UpdateProperties -> updatePropertiesInternal(event.properties)
-                    is GalvaEvent.TrackPushEvent -> {
-                        record(APIOperation.TrackPushNotification(event.communicationId, event.eventType, event.timestamp))
-                        event.onRecorded?.invoke()
-                    }
-
-                    is GalvaEvent.SetOptOut -> setOptOutInternal(event.optedOut)
-                    GalvaEvent.Foreground -> sessionTracker?.handleForeground()
-
-                    is GalvaEvent.HandleOpenURL -> deeplinkRouter.handle(event.uri)
-                    GalvaEvent.ProcessPendingDeeplink -> deeplinkRouter.handlePending()
-
-                    GalvaEvent.Logout -> logoutInternal()
+                try {
+                    process(event)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (t: Throwable) {
+                    logger.error(t) { "${event::class.simpleName} failed (ignored)" }
                 }
             }
+        }
+    }
+
+    private suspend fun process(event: GalvaEvent) {
+        when (event) {
+            is GalvaEvent.Identify -> identifyInternal(
+                event.userId, event.email, event.obfuscatedAccountId
+            )
+
+            is GalvaEvent.SetPushToken -> setPushTokenInternal(event.token, event.provider)
+            is GalvaEvent.ClearPushToken -> clearPushTokenInternal()
+            is GalvaEvent.UpdateProperties -> updatePropertiesInternal(event.properties)
+            is GalvaEvent.TrackNotification -> try {
+                trackInternal(event.eventName, event.properties)
+            } finally {
+                // A BroadcastReceiver waits on it: release it even when recording fails.
+                event.onRecorded?.invoke()
+            }
+
+            is GalvaEvent.Track -> trackInternal(event.eventName, event.properties)
+            is GalvaEvent.SetOptOut -> setOptOutInternal(event.optedOut)
+            GalvaEvent.Foreground -> sessionTracker?.handleForeground()
+
+            is GalvaEvent.HandleOpenURL -> _deeplinkRouter?.handle(event.uri)
+            GalvaEvent.ProcessPendingDeeplink -> _deeplinkRouter?.handlePending()
+
+            GalvaEvent.Logout -> logoutInternal()
         }
     }
 
@@ -207,16 +222,33 @@ public class Galva @VisibleForTesting internal constructor(
      */
     @Synchronized
     @JvmName("configureInternal")
-    private fun configure(context: Context, configuration: Configuration) {
+    private fun configure(context: Context, configuration: Configuration, integrations: List<GalvaIntegration>) {
         if (isConfigured) {
             logger.warn("Galva.configure() called twice — ignoring subsequent call.")
             return
         }
+        if (configuration.apiKey.isBlank()) {
+            logger.error { "Galva.configure() ignored: apiKey is blank. Galva stays disabled." }
+            return
+        }
+        try {
+            configureOnMainThread(context, configuration, integrations)
+        } catch (t: Throwable) {
+            config = null
+            logger.error(t) { "Galva.configure() failed; Galva stays disabled" }
+        }
+    }
+
+    private fun configureOnMainThread(
+        context: Context,
+        configuration: Configuration,
+        integrations: List<GalvaIntegration>,
+    ) {
         // Only the application context is kept: the SDK outlives any activity.
-        val appContext = context.applicationContext
+        val appContext = context.applicationContext ?: context
         this.config = configuration
-        configuration.logSink?.let(logger::setSink)
-        logger.setLogLevel(configuration.logLevel)
+        configuration.logSink?.let { logger.setSink(it.toInternal()) }
+        logger.setLogLevel(configuration.logLevel.toInternal())
         logger.setEnableLogging(configuration.logLevel != LogLevel.NONE)
         // SharedPreferences load on their own thread; nothing is read here.
         settings = SdkSettings(appContext)
@@ -224,7 +256,9 @@ public class Galva @VisibleForTesting internal constructor(
         val appLifecycle: AppLifecycleObserver = AndroidAppLifecycleObserver()
         // Registered now so the first resumed activity is known when messages arrive.
         val autoDisplay = if (configuration.autoDisplayInAppMessages) {
-            InAppMessageAutoDisplay(appContext as Application, galvaScope, logger).also { it.register() }
+            val application = appContext as? Application
+            if (application == null) logger.warn { "autoDisplayInAppMessages needs an Application context; disabled" }
+            application?.let { InAppMessageAutoDisplay(it, galvaScope, logger).also(InAppMessageAutoDisplay::register) }
         } else {
             null
         }
@@ -241,7 +275,7 @@ public class Galva @VisibleForTesting internal constructor(
         }
         galvaScope.launch(Dispatchers.IO) {
             try {
-                setUp(appContext, configuration, appLifecycle, autoDisplay)
+                setUp(appContext, configuration, appLifecycle, autoDisplay, integrations)
             } catch (t: Throwable) {
                 logger.error(t) { "Galva setup failed — SDK calls are ignored" }
             }
@@ -255,20 +289,22 @@ public class Galva @VisibleForTesting internal constructor(
         configuration: Configuration,
         appLifecycle: AppLifecycleObserver,
         autoDisplay: InAppMessageAutoDisplay?,
+        integrations: List<GalvaIntegration>,
     ) {
-        if (!PlayBillingVersion.isSupported) {
+        val billingSupported = PlayBillingVersion.isSupported
+        if (!billingSupported) {
             logger.error {
                 val found = if (PlayBillingVersion.isPresent) "an older Play Billing Library" else "no Play Billing Library"
-                "Galva SDK requires Play Billing 8.0+, but the app has $found. Add to your build.gradle.kts: " +
-                    "implementation(\"com.android.billingclient:billing-ktx:8.0.0\")"
+                "Galva SDK requires Play Billing 8.0+, but the app has $found; purchases in messages will fail. " +
+                    "Add to your build.gradle.kts: implementation(\"com.android.billingclient:billing-ktx:8.0.0\")"
             }
         }
-        val settings = checkNotNull(settings)
+        val settings = settings ?: return
         trackingOptedOut = settings.optedOut
 
-        _sdkNotificationHandler = SdkNotificationHandler(appContext)
-        val keyValueStorage = KeyValueStorageFactory.create(appContext)
-        identityManager = DefaultIdentityManager.create(keyValueStorage, logger)
+        _sdkNotificationHandler = SdkNotificationHandler(appContext, logger)
+        val keyValueStorage = KeyValueStorageFactory.create(appContext, logger = logger)
+        val identity = DefaultIdentityManager.create(keyValueStorage, logger).also { identityManager = it }
         val httpClient = OkHttpClientBuilder().apiKey(configuration.apiKey)
             .sdkVersion("android/$sdkVersion").logger(logger).build()
         val identifyService = HttpAPIIdentifyService(
@@ -291,13 +327,12 @@ public class Galva @VisibleForTesting internal constructor(
             baseURL = configuration.env.baseAPIUrl, httpClient, logger
         )
         val batchPolicy = SizeOrTimeoutBatchPolicy(10, 10.seconds)
-        val configStore = SdkInitializeConfigStore(sdkInitClient, keyValueStorage = keyValueStorage)
-        val billing = DefaultBillingManager.create(
-            appContext, logger, GalvaProductIdSource(
-                configStore
-            ), galvaScope
-        ).apply {
-            initialize()
+        val configStore = SdkInitializeConfigStore(sdkInitClient, keyValueStorage = keyValueStorage, logger = logger)
+        val billing = if (billingSupported) {
+            DefaultBillingManager.create(appContext, logger, GalvaProductIdSource(configStore), galvaScope)
+                .apply { initialize() }
+        } else {
+            UnavailableBillingManager()
         }
         billingManagerReady.complete(billing)
         val inAppMessagingManager = DefaultInAppMessagingManager.create(
@@ -321,6 +356,7 @@ public class Galva @VisibleForTesting internal constructor(
                 )
             ),
             pendingDeeplinkStore = LocalPendingDeeplinkStore(keyValueStorage),
+            logger = logger,
         )
         _operationManager = DefaultOperationManager.create(
             appContext, identifyService, galvaScope, logger, batchPolicy, appLifecycle
@@ -346,7 +382,25 @@ public class Galva @VisibleForTesting internal constructor(
         }
         startProcessingGalvaEvents()
         channel.trySend(GalvaEvent.ProcessPendingDeeplink)
+        installIntegrations(integrations)
 
+        // The SDK works from here on; a failure below only delays config, catalog or bundles.
+        try {
+            warmUp(configStore, billing, batchPolicy, webViewBundleResolver)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            logger.warn(t) { "Background warm-up failed; retried on the next launch" }
+        }
+    }
+
+    /** Fetches the remote config, the product catalog and the message bundles. */
+    private suspend fun warmUp(
+        configStore: SdkInitializeConfigStore,
+        billing: BillingManager,
+        batchPolicy: SizeOrTimeoutBatchPolicy,
+        webViewBundleResolver: WebViewBundleResolver,
+    ) {
         val config = configStore.loadAndSaveConfig()
         billing.loadProducts()
         val maxBatchSize = max(config?.data?.batchCollection?.flushSize ?: 10, 10)
@@ -366,12 +420,42 @@ public class Galva @VisibleForTesting internal constructor(
 
     /** Runs [block] now when the SDK is set up, otherwise once it is. */
     private fun whenReady(block: () -> Unit) {
+        val guarded = {
+            try {
+                block()
+            } catch (t: Throwable) {
+                logger.error(t) { "Unexpected SDK error (ignored)" }
+            }
+        }
         if (ready.isCompleted) {
-            block()
+            guarded()
         } else {
             galvaScope.launch(Dispatchers.Main) {
                 ready.await()
-                block()
+                guarded()
+            }
+        }
+    }
+
+    /**
+     * Installs each integration once (the first of a name wins), each on its own coroutine so a
+     * slow or failing one never holds up the others or the SDK.
+     */
+    @OptIn(GalvaIntegrationApi::class)
+    @VisibleForTesting
+    internal fun installIntegrations(integrations: List<GalvaIntegration>) {
+        integrations.distinctBy { it.name }.forEach { integration ->
+            galvaScope.launch(Dispatchers.IO) {
+                logger.info { "Installing integration ${integration.name} ${integration.version}" }
+                try {
+                    integration.install(
+                        IntegrationContext(PrefixedIntegrationLogger(integration.name, logger), galvaScope)
+                    )
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (t: Throwable) {
+                    logger.error(t) { "Integration ${integration.name} failed to install" }
+                }
             }
         }
     }
@@ -382,10 +466,11 @@ public class Galva @VisibleForTesting internal constructor(
             logger.debug { "${operation::class.simpleName} dropped (opted out)" }
             return
         }
-        operationManager.recordOperation(operation)
+        _operationManager?.recordOperation(operation)
     }
 
     private suspend fun trackInternal(event: String, properties: JsonObject?) {
+        val identity = identityManager ?: return
         record(APIOperation.Track(identity.current.anonymousId, identity.current.userId, event, properties))
     }
 
@@ -395,6 +480,30 @@ public class Galva @VisibleForTesting internal constructor(
         put("os_version", Build.VERSION.RELEASE)
         AppInfoSource.read(context)?.version?.let { put("app_version", it) }
         put("sdk_version", sdkVersion)
+    }
+
+    // ── Events ──────────────────────────────────────────────────────────────
+
+    /**
+     * Tracks an event, like the iOS SDK's `AppEvents.track`. Attributes are a loose map: values
+     * that are not JSON-compatible are silently dropped (strings, booleans, numbers, null, dates,
+     * URIs, UUIDs, enums and nested maps / collections of those are kept). Events are persisted
+     * and uploaded in batches; they are dropped while the user is opted out.
+     */
+    @JvmOverloads
+    public fun track(eventName: String, attributes: Map<String, Any?>? = null) {
+        // An empty name would get the whole batch rejected by the backend.
+        if (eventName.isBlank()) {
+            logger.warn { "track ignored — blank event name" }
+            return
+        }
+        val properties = attributes?.let(EventAttributes::coerce)?.takeIf { it.isNotEmpty() }
+        channel.trySend(GalvaEvent.Track(eventName, properties))
+    }
+
+    /** Tracks a strongly-typed [AppEvent]. */
+    public fun track(event: AppEvent) {
+        track(event.eventName, event.attributes)
     }
 
     // ── Identity ────────────────────────────────────────────────────────────
@@ -415,9 +524,11 @@ public class Galva @VisibleForTesting internal constructor(
             logger.debug { "identify dropped (opted out)" }
             return
         }
+        val identity = identityManager ?: return
         val email = requestedEmail?.takeIf(EmailValidator::isValid)
         if (requestedEmail != null && email == null) logger.warn { "identify — dropped invalid email" }
         identity.identify(userId, email, obfuscatedAccountId)
+        logger.info { "Identified user $userId" }
         record(
             APIOperation.Identify(
                 anonymousId = identity.current.anonymousId,
@@ -426,7 +537,7 @@ public class Galva @VisibleForTesting internal constructor(
                 email = email
             )
         )
-        deeplinkRouter.handlePending()
+        _deeplinkRouter?.handlePending()
     }
 
     /** Sets profile properties on the current user. An invalid email property is dropped. */
@@ -439,14 +550,15 @@ public class Galva @VisibleForTesting internal constructor(
             logger.debug { "updateProperties dropped (opted out)" }
             return
         }
-        val valid = properties.filterNot { property ->
-            val email = (property.propertyValue as? JsonPrimitive)?.takeIf { it.isString }?.content
-            (property.key == EMAIL_TRAIT && email != null && !EmailValidator.isValid(email)).also { invalid ->
+        val valid = properties.map { it.key to it.toJson() }.filterNot { (key, value) ->
+            val email = (value as? JsonPrimitive)?.takeIf { it.isString }?.content
+            (key == EMAIL_TRAIT && email != null && !EmailValidator.isValid(email)).also { invalid ->
                 if (invalid) logger.warn { "updateProperties — dropped invalid $EMAIL_TRAIT" }
             }
         }
         if (valid.isEmpty()) return
-        val propertyObject = JsonObject(valid.associate { property -> property.key to property.propertyValue })
+        val identity = identityManager ?: return
+        val propertyObject = JsonObject(valid.toMap())
         identity.updateUserProperties(propertyObject)
         record(
             APIOperation.UpdateUserProperties(
@@ -460,14 +572,16 @@ public class Galva @VisibleForTesting internal constructor(
     }
 
     private suspend fun logoutInternal() {
+        val identity = identityManager ?: return
         // Drop the signed-out user's undelivered operations so none of them is sent after the
         // switch. Scoped to that identity: operations of the next identity are never purged.
-        operationManager.clearOperationsOf(identity.current.anonymousId)
+        _operationManager?.clearOperationsOf(identity.current.anonymousId)
         // Recorded after the purge so the endpoint deletion for the signed-out user still goes out.
         clearPushTokenInternal()
         identity.logout()
         // Seen / presented messages belonged to the signed-out user.
-        inAppMessageManager.reset()
+        _inAppMessageManager?.reset()
+        logger.info { "Logged out; now anonymous as ${identity.current.anonymousId}" }
         record(
             APIOperation.CreateAnonymousId(
                 identity.current.anonymousId, identity.current.obfuscatedAccountId
@@ -512,7 +626,7 @@ public class Galva @VisibleForTesting internal constructor(
         trackingOptedOut = optedOut
         if (optedOut && !wasOptedOut) {
             // Nothing recorded before opting out may leave the device afterwards.
-            operationManager.clearAllOperation()
+            _operationManager?.clearAllOperation()
             logger.info { "Opted out — pending events purged" }
         } else if (!optedOut && wasOptedOut) {
             logger.info { "Opted back in" }
@@ -521,37 +635,52 @@ public class Galva @VisibleForTesting internal constructor(
 
     // ── Push ────────────────────────────────────────────────────────────────
 
-    public fun setPushToken(token: String) {
-        channel.trySend(GalvaEvent.SetPushToken(token))
+    /**
+     * Registers this device's push token, issued by [provider] (FCM unless the device lacks Google Play
+     * services). Call it from the provider's new-token callback and with the current token on start-up.
+     */
+    @JvmOverloads
+    public fun setPushToken(token: String, provider: PushProvider = PushProvider.FCM) {
+        channel.trySend(GalvaEvent.SetPushToken(token, provider))
     }
 
-    private suspend fun setPushTokenInternal(token: String) {
+    private suspend fun setPushTokenInternal(token: String, provider: PushProvider) {
         if (trackingOptedOut) {
             logger.debug { "setPushToken dropped (opted out)" }
             return
         }
-        val invalidToken = identity.current.pushToken
-        if (invalidToken == token) {
+        if (token.isBlank()) {
+            // HMS getToken returns "" when the token is delivered later through onNewToken.
+            logger.warn { "setPushToken ignored: the ${provider.name} token is empty" }
+            return
+        }
+        val identity = identityManager ?: return
+        val registered = identity.current
+        val registeredToken = registered.pushToken
+        if (registeredToken == token && registered.registeredPushPlatform == provider.platform) {
             logger.debug { "Push token unchanged — nothing to register" }
             return
         }
-        if (!(invalidToken.isNullOrEmpty())) {
-            logger.info { "Replacing the registered push token" }
-            clearInvalidPushTokenInternal(invalidToken)
+        if (!registeredToken.isNullOrEmpty()) {
+            logger.info { "Push token changed; replacing the registered one" }
+            clearInvalidPushTokenInternal(registeredToken, registered.registeredPushPlatform)
+        } else {
+            logger.info { "Push token registered (${provider.name})" }
         }
-        identity.setPushToken(token)
+        identity.setPushToken(token, provider.platform)
         record(
             APIOperation.SetPushToken(
-                anonymousId = identity.current.anonymousId, token = token
+                anonymousId = identity.current.anonymousId, token = token, platform = provider.platform
             )
         )
     }
 
-    private suspend fun clearInvalidPushTokenInternal(pushToken: String) {
+    private suspend fun clearInvalidPushTokenInternal(pushToken: String, platform: String) {
+        val identity = identityManager ?: return
         identity.clearPushToken()
         record(
             APIOperation.ClearPushToken(
-                anonymousId = identity.current.anonymousId, token = pushToken
+                anonymousId = identity.current.anonymousId, token = pushToken, platform = platform
             )
         )
     }
@@ -561,29 +690,40 @@ public class Galva @VisibleForTesting internal constructor(
     }
 
     private suspend fun clearPushTokenInternal() {
-        val currentToken = identity.current.pushToken ?: return
-        clearInvalidPushTokenInternal(currentToken)
+        val registered = identityManager?.current ?: return
+        val currentToken = registered.pushToken ?: return
+        clearInvalidPushTokenInternal(currentToken, registered.registeredPushPlatform)
     }
+
+    // Tokens stored before providers existed carry no platform; they were all FCM.
+    private val Identity.registeredPushPlatform: String
+        get() = pushPlatform ?: PushProvider.FCM.platform
 
     public fun isGalvaNotification(message: Map<String, String>): Boolean =
         NotificationUtils.isCommunicationNotification(message)
 
-    /** Shows a Galva push notification and tracks it; call from `onMessageReceived`. */
+    /**
+     * Shows a Galva push notification; call from `onMessageReceived`. `$gv_notification_presented`
+     * is tracked only when the notification was actually posted (not when notifications are off).
+     */
     public fun handlePush(message: Map<String, String>) {
-        message[COMMUNICATION_ID]?.let { trackPushEvent(it, PUSH_PRESENTED) }
-        whenReady { sdkNotificationHandler.handleNotification(message) }
+        whenReady {
+            if (_sdkNotificationHandler?.handleNotification(message) == true) {
+                trackNotificationEvent(NotificationEvents.PRESENTED, message)
+            }
+        }
     }
 
     /**
-     * Records a push interaction on the SDK queue. [onRecorded] runs once it is persisted (or
-     * dropped while opted out), so a BroadcastReceiver can finish its `goAsync()` work.
+     * Tracks a notification interaction like the iOS SDK: a regular track event whose attributes
+     * are the push data plus `id`. [onRecorded] runs once it is persisted (or dropped while opted
+     * out), so a BroadcastReceiver can finish its `goAsync()` work.
      */
-    internal fun trackPushEvent(communicationId: String, eventType: String, onRecorded: (() -> Unit)? = null) {
-        channel.trySend(
-            GalvaEvent.TrackPushEvent(
-                communicationId, eventType, DateTimeFormatUtils.format(Calendar.getInstance()), onRecorded
-            )
-        )
+    internal fun trackNotificationEvent(eventName: String, payload: Map<String, String>, onRecorded: (() -> Unit)? = null) {
+        val properties = EventAttributes.coerce(NotificationEvents.attributes(payload))
+        if (channel.trySend(GalvaEvent.TrackNotification(eventName, properties, onRecorded)).isFailure) {
+            onRecorded?.invoke()
+        }
     }
 
     // ── In-app messages ─────────────────────────────────────────────────────
@@ -595,11 +735,11 @@ public class Galva @VisibleForTesting internal constructor(
      */
     public fun getInAppMessage(): Flow<Message> = flow {
         ready.await()
-        emitAll(inAppMessageManager.messages)
+        _inAppMessageManager?.let { manager -> emitAll(manager.messages.map { it.toPublic() }) }
     }
 
     public fun showMessage(activity: Activity, message: Message) {
-        whenReady { inAppMessageManager.showMessage(activity, message) }
+        whenReady { _inAppMessageManager?.showMessage(activity, message.toInternal()) }
     }
 
     /**
@@ -607,7 +747,7 @@ public class Galva @VisibleForTesting internal constructor(
      * use this after a user action that should trigger a workflow.
      */
     public fun checkForMessages() {
-        whenReady { inAppMessageManager.checkForMessages() }
+        whenReady { _inAppMessageManager?.checkForMessages() }
     }
 
     /**
@@ -624,7 +764,7 @@ public class Galva @VisibleForTesting internal constructor(
     // ── Logging ─────────────────────────────────────────────────────────────
 
     public fun setLogLevel(level: LogLevel) {
-        logger.setLogLevel(level)
+        logger.setLogLevel(level.toInternal())
     }
 
     public fun setEnableLogging(enableLogging: Boolean) {
@@ -636,13 +776,11 @@ public class Galva @VisibleForTesting internal constructor(
      * a file. The configured log level still filters what reaches the sink.
      */
     public fun setLogger(sink: LogSink) {
-        logger.setSink(sink)
+        logger.setSink(sink.toInternal())
     }
 
     public companion object {
         private const val EMAIL_TRAIT = "\$gv_email"
-        private const val COMMUNICATION_ID = "communicationId"
-        private const val PUSH_PRESENTED = "communication_presented"
         private const val GALVA_SCHEME_PREFIX = "gv"
 
         /** Version of this SDK, e.g. for diagnostics screens and support reports. */
@@ -655,14 +793,24 @@ public class Galva @VisibleForTesting internal constructor(
         private fun defaultLogger(): Logger = Logger.create(
             tag = "Galva",
             sink = AndroidLogSink(),
-            level = LogLevel.WARN,
+            level = InternalLogLevel.WARN,
             enabled = true,
         )
 
-        /** Configures the SDK. Call once, from `Application.onCreate()`, on the main thread. */
+        /**
+         * Configures the SDK. Call once, from `Application.onCreate()`, on the main thread.
+         *
+         * @param integrations connections to other SDKs in the app, from integration packages,
+         *   e.g. `GalvaIntegration.revenueCat()`. Installed once Galva is set up.
+         */
         @JvmStatic
-        public fun configure(context: Context, configuration: Configuration) {
-            instance.configure(context, configuration)
+        @JvmOverloads
+        public fun configure(
+            context: Context,
+            configuration: Configuration,
+            integrations: List<GalvaIntegration> = emptyList(),
+        ) {
+            instance.configure(context, configuration, integrations)
         }
     }
 
@@ -671,16 +819,17 @@ public class Galva @VisibleForTesting internal constructor(
             val userId: String, val email: String?, val obfuscatedAccountId: String?
         ) : GalvaEvent()
 
-        data class SetPushToken(val token: String) : GalvaEvent()
+        data class SetPushToken(val token: String, val provider: PushProvider) : GalvaEvent()
         data object ClearPushToken : GalvaEvent()
         data class UpdateProperties(val properties: List<ProfileProperty>) : GalvaEvent()
 
-        data class TrackPushEvent(
-            val communicationId: String,
-            val eventType: String,
-            val timestamp: String,
+        data class TrackNotification(
+            val eventName: String,
+            val properties: JsonObject,
             val onRecorded: (() -> Unit)?,
         ) : GalvaEvent()
+
+        data class Track(val eventName: String, val properties: JsonObject?) : GalvaEvent()
 
         data class SetOptOut(val optedOut: Boolean) : GalvaEvent()
         data object Foreground : GalvaEvent()

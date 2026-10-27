@@ -18,11 +18,13 @@
   <p id="status">booting</p>
   <p id="deepLink">deepLink: -</p>
   <p id="apiFetch">apiFetch: -</p>
+  <button id="buy" onclick="buy()">Buy E2E</button>
   <button id="close" onclick="closeMessage()">Close E2E</button>
 
   <script>
     var pending = {};
     var seq = 0;
+    var messageData = null;
 
     function call(name, payload) {
       return new Promise(function (resolve, reject) {
@@ -52,6 +54,7 @@
         var data = await call('getMessageData');
         // Android answers getMessageData with the payload serialized as a JSON string.
         if (typeof data === 'string') { data = JSON.parse(data); }
+        messageData = data;
         report.messageData = data;
         report.steps.push('getMessageData');
         if (data && data.title) { setText('title', data.title); }
@@ -71,6 +74,17 @@
         setText('apiFetch', res && res.ok ? 'apiFetch ok' : 'apiFetch status ' + (res && res.status));
       } catch (e) { setText('apiFetch', 'apiFetch error ' + JSON.stringify(e)); }
       setText('status', 'booted');
+    }
+
+    // Buys the E2E offer and reports the answer (result or error) to the mock.
+    async function buy() {
+      var report = { messageData: messageData };
+      try {
+        report.result = await call('requestPurchase', {
+          productId: 'e2e_pro', basePlanId: 'monthly', promotionalOffer: { offerId: 'intro' }
+        });
+      } catch (e) { report.error = e; }
+      try { await call('apiFetch', { path: '/e2e/purchase', method: 'POST', body: report }); } catch (e) {}
     }
 
     function closeMessage() { call('dismiss', { reason: 'e2e-close' }); }

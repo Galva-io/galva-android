@@ -21,9 +21,9 @@ internal class BillingClientFactory(
                     .enableOneTimeProducts().build()
             )
         if (compat.enableAutoServiceReconnection(builder)) {
-            logger.info { "Enabled auto service reconnection" }
+            logger.debug { "Play Billing auto service reconnection enabled" }
         }else{
-            logger.info { "Auto service reconnection not supported" }
+            logger.debug { "Play Billing auto service reconnection not available" }
         }
         return builder.build()
     }

@@ -1,6 +1,8 @@
 package io.galva.localstorage
 
 import io.galva.common.InternalGalvaApi
+import io.galva.common.logger.Logger
+import io.galva.common.logger.NoOpLogger
 import android.content.Context
 import android.content.SharedPreferences
 import io.galva.localstorage.PrefKeyValueStorage.Companion.DEFAULT_JSON
@@ -23,6 +25,7 @@ class SecureDataStoreKeyValueStorage(
     private val cipher: Cipher,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val json: Json = DEFAULT_JSON,
+    private val logger: Logger = NoOpLogger,
 ) : KeyValueStorage {
     private val prefs: SharedPreferences =
         context.applicationContext.getSharedPreferences(fileName, Context.MODE_PRIVATE)
@@ -76,13 +79,21 @@ class SecureDataStoreKeyValueStorage(
 
     override suspend fun <T> getObject(key: String, serializer: KSerializer<T>): T? {
         val raw = readBlob(key) ?: return null
-        return runCatching { json.decodeFromString(serializer, raw) }.onFailure { remove(key) }
+        return runCatching { json.decodeFromString(serializer, raw) }
+            .onFailure {
+                logger.warn(it) { "Stored value for \"$key\" could not be read; removed it" }
+                remove(key)
+            }
             .getOrNull()
     }
 
     override fun <T> observeObject(key: String, serializer: KSerializer<T>): Flow<T?> =
         observeBlob(key).map { raw ->
-            raw?.let { runCatching { json.decodeFromString(serializer, it) }.getOrNull() }
+            raw?.let {
+                runCatching { json.decodeFromString(serializer, it) }
+                    .onFailure { e -> logger.warn(e) { "Stored value for \"$key\" could not be read; ignoring it" } }
+                    .getOrNull()
+            }
         }
 
     override suspend fun contains(key: String): Boolean = prefs.contains(key)
@@ -112,7 +123,9 @@ class SecureDataStoreKeyValueStorage(
         val raw = prefs.getString(key, null) ?: return null
         return try {
             cipher.decrypt(raw, aad = aadFor(key))
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            // Typically the Keystore key was lost (e.g. data restored to a new device).
+            logger.warn(e) { "Stored value for \"$key\" could not be decrypted; removed it" }
             prefs.edit().remove(key).apply()
             null
         }

@@ -85,7 +85,18 @@ class JSBridge(
         } catch (e: BridgeException) {
             logger.warn { "Bridge: ${method.methodName} rejected — ${e.error.message}" }
             callback.onBridgeError(requestId, e.error)
+        } catch (e: Exception) {
+            // Runs on WebView's JavaBridge thread: an escaping exception would crash the app.
+            logger.error(e) { "Bridge: ${method.methodName} failed" }
+            callback.onBridgeError(requestId, BridgeError(unexpectedErrorCode(method), "Unexpected error"))
         }
+    }
+
+    private fun unexpectedErrorCode(method: BridgeMethod): BridgeError.Code = when (method) {
+        BridgeMethod.RequestPurchase, BridgeMethod.GetProductPrice -> BridgeError.Code.PURCHASE_FAILED
+        BridgeMethod.DoApiFetch -> BridgeError.Code.API_REQUEST_FAILED
+        BridgeMethod.OpenDeepLink, BridgeMethod.OpenManageSubscription -> BridgeError.Code.URL_OPEN_FAILED
+        else -> BridgeError.Code.MESSAGE_DATA_UNAVAILABLE
     }
 
 }

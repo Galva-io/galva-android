@@ -25,7 +25,8 @@ sealed class EndpointNotification {
     @SerialName("PushNotification")
     data class PushNotification(
         val channelType: String = "push-notification",
-        val platform: String = "fcm",
+        /** The push service that issued [token]: `fcm`, `hms` or `adm`. */
+        val platform: String,
         val token: String,
     ) : EndpointNotification()
 

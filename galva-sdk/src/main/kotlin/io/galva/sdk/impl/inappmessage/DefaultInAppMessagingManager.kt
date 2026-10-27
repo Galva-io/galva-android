@@ -151,7 +151,7 @@ internal class DefaultInAppMessagingManager private constructor(
             // A deep link may have claimed the slot while the request was in flight. Drop the
             // results unmarked so they surface again on the next return event.
             if (displaySlot != DisplaySlot.Available) {
-                logger.info { "In-app poll dropped — display slot claimed mid-flight" }
+                logger.debug { "In-app poll dropped — display slot claimed mid-flight" }
                 return null
             }
             val item = items.firstOrNull { it.id !in seenIds }
@@ -169,7 +169,7 @@ internal class DefaultInAppMessagingManager private constructor(
                 createdAt = item.createdAt,
             )
         }
-        logger.debug { "In-app message delivered: ${message.id}" }
+        logger.info { "In-app message ${message.id} received" }
         stream.emit(message)
         return message
     }
@@ -238,9 +238,18 @@ internal class DefaultInAppMessagingManager private constructor(
                 identityManager.userId
             )
         )
-        if (resolveMessage !is ServiceResult.Success<MessageResponse>) {
-            logger.error("Failed to resolve message with id ${message.id}")
-            return false
+        when (resolveMessage) {
+            is ServiceResult.Success<MessageResponse> -> Unit
+            is ServiceResult.Failure -> {
+                logger.warn { "In-app message ${message.id} not shown: resolve rejected with HTTP ${resolveMessage.status}" }
+                return false
+            }
+            is ServiceResult.Error -> {
+                logger.info { "In-app message ${message.id} not shown: backend unreachable (offline?)" }
+                return false
+            }
+            // Logged by the service.
+            is ServiceResult.UnknownError -> return false
         }
         if (!resolveMessage.value.valid) {
             logger.info { "In-app message ${message.id} invalidated by server" }
@@ -248,11 +257,13 @@ internal class DefaultInAppMessagingManager private constructor(
         }
         return when (val outcome = bundleResolver.resolve(resolveMessage.value)) {
             is WebViewBundleResolver.Outcome.Failed -> {
-                logger.error(outcome.cause) { "Failed to resolve bundle for message ${message.id}: ${outcome.reason}" }
+                // The resolver logged the cause at its level (offline, HTTP error, disk failure).
+                logger.info { "In-app message ${message.id} not shown: bundle unavailable (${outcome.reason})" }
                 false
             }
 
             is WebViewBundleResolver.Outcome.Ready -> withContext(Dispatchers.Main.immediate) {
+                logger.debug { "Showing in-app message ${message.id}" }
                 val caller = contextRef.get()
                     ?.takeUnless { it is Activity && (it.isFinishing || it.isDestroyed) }
                 messageOverlay.present(caller ?: appContext, resolveMessage.value, outcome.file, deepLinkParameters) {

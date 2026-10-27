@@ -16,7 +16,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
 import androidx.core.content.ContextCompat
-import io.galva.core.protocol.identity.ProfileProperty
+import io.galva.sdk.ProfileProperty
 import io.galva.sdk.Galva
 import java.util.UUID
 
@@ -65,6 +65,9 @@ class MainActivity : AppCompatActivity() {
             galva.updateProperties(ProfileProperty.Email(emailInput.text.toString().trim()))
         }
         onClick(R.id.logout_button) { galva.logout() }
+        onClick(R.id.track_event_button) {
+            galva.track("DemoButtonTapped", mapOf("screen" to "control_panel", "tappedAt" to java.util.Date()))
+        }
         // A click listener (not a checked-change one) so refreshStatus() can set the state silently.
         optOutSwitch.setOnClickListener { galva.setOptOut(optOutSwitch.isChecked) }
         onClick(R.id.check_messages_button) { galva.checkForMessages() }
@@ -106,7 +109,7 @@ class MainActivity : AppCompatActivity() {
             Galva.sdkVersion,
             galva.currentUserId,
             getString(if (galva.isAnonymous) R.string.status_anonymous else R.string.status_identified),
-            galva.isOptedOut,
+            galva.isOptedOut.toString(),
         )
         optOutSwitch.isChecked = galva.isOptedOut
     }

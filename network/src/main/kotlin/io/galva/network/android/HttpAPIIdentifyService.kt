@@ -66,21 +66,14 @@ class HttpAPIIdentifyService(
                     }
                     .query("channelType", request.channelType.id)
                     .build()
-            logger.debug {
-                "fetchCommunications request: ${request.method} ${request.url}"
-            }
             httpClient.execute(request).toServiceResult { responseJson ->
                 DEFAULT_JSON.decodeFromString<CommunicationResponse>(responseJson)
             }
         } catch (e: NetworkError) {
-            logger.error {
-                "fetchCommunications failed with NetworkError: ${e.message}, cause: ${e.cause?.message}"
-            }
+            // The caller logs what an unreachable backend means for it.
             ServiceResult.Error(e)
         } catch (e: Exception) {
-            logger.error {
-                "fetchCommunications failed with Exception: ${e.message}, cause: ${e.cause?.message}"
-            }
+            logger.error(e) { "fetchCommunications failed" }
             ServiceResult.UnknownError(e)
         }
     }
@@ -127,14 +120,9 @@ class HttpAPIIdentifyService(
                 MessageResponse(request.messageId, payload, isValid, webviewVersion)
             }
         } catch (e: NetworkError) {
-            logger.error {
-                "resolveMessage failed with NetworkError: ${e.message}, cause: ${e.cause?.message}"
-            }
             ServiceResult.Error(e)
         } catch (e: Exception) {
-            logger.error {
-                "resolveMessage failed with Exception: ${e.message}, cause: ${e.cause?.message}"
-            }
+            logger.error(e) { "resolveMessage ${request.messageId} failed" }
             ServiceResult.UnknownError(e)
         }
     }

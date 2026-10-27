@@ -18,9 +18,9 @@ interface InAppMessagingManager {
     /** Presents [message]. Calling it again for a message that is already being shown is a no-op. */
     fun showMessage(context: Activity, message: Message)
 
+    /** Presents [message] when [context] is an Activity; otherwise there is nothing to show it on. */
     fun showMessage(context: Context, message: Message) {
-        require(context is Activity) { "An Activity context is required" }
-        showMessage(context, message)
+        if (context is Activity) showMessage(context, message)
     }
 
     /** Shows a message opened from a deep link; its query parameters reach the page as `window.galvaDeepLinkParams`. */

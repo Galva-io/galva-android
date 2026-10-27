@@ -6,6 +6,7 @@ Everything after [installation](installation.md): identifying users, rendering i
 - [Configuration reference](#configuration-reference)
 - [Identify users](#identify-users)
 - [User properties](#user-properties)
+- [Track events](#track-events)
 - [Sessions](#sessions)
 - [Privacy and opt-out](#privacy-and-opt-out)
 - [In-app messages](#in-app-messages)
@@ -104,7 +105,7 @@ Galva.instance.obfuscatedAccountId  // stable per-identity id used for Play Bill
 Attach traits to the current profile with `updateProperties`. Built-in keys are typed:
 
 ```kotlin
-import io.galva.core.protocol.identity.ProfileProperty
+import io.galva.sdk.ProfileProperty
 
 Galva.instance.updateProperties(
     ProfileProperty.Email("jane@example.com"),
@@ -130,6 +131,32 @@ The SDK also maintains a few properties for you: time zone, language and country
 
 ---
 
+## Track events
+
+Record what users do, like the iOS SDK's `AppEvents.track`:
+
+```kotlin
+Galva.instance.track("AddHabitButtonTapped")
+Galva.instance.track("Purchase", mapOf("sku" to "pro_yearly", "price" to 9.99, "currency" to "USD"))
+```
+
+Attributes are a loose map, so you can pass one you already have. Values that are not JSON-compatible are silently dropped: strings, booleans, numbers and `null` are kept; `Date` / `Calendar` become ISO-8601 strings (UTC), `Uri` / `URL` / `UUID` / `BigDecimal` / enums become strings, and nested maps (string keys) and collections are filtered the same way. A blank event name is ignored.
+
+For events you send often, define a typed event so call sites can't drift:
+
+```kotlin
+data class PurchaseEvent(val sku: String, val price: Double) : AppEvent {
+    override val eventName: String get() = "Purchase"
+    override val attributes: Map<String, Any?> get() = mapOf("sku" to sku, "price" to price)
+}
+
+Galva.instance.track(PurchaseEvent(sku = "pro_yearly", price = 9.99))
+```
+
+Events are persisted before upload, batched, retried while offline, and attributed to the user identified at the time of the call. They are dropped while the user is [opted out](#privacy-and-opt-out).
+
+---
+
 ## Sessions
 
 With `autoTrackSessions = true` (the default) the SDK sends a `session_start` event when the app comes to the foreground and no session was started in the last 30 minutes — the same rule as the iOS SDK. The 30-minute window is measured from the previous `session_start` and survives app restarts; there is no `session_end` event (the backend derives durations). Each event carries `device_locale`, `os_version`, `app_version` and `sdk_version`.
@@ -145,7 +172,7 @@ Galva.instance.setOptOut(true)    // stop tracking
 Galva.instance.isOptedOut         // synchronous read, safe on any thread
 ```
 
-While opted out, `identify`, `updateProperties`, push-token registration, push interaction events and `session_start` are dropped, and events still waiting to be uploaded are deleted when switching to opted out. In-app messages keep working. The choice is stored on the device and survives restarts; `setOptOut(false)` turns tracking back on.
+While opted out, `track`, `identify`, `updateProperties`, push-token registration, push interaction events and `session_start` are dropped, and events still waiting to be uploaded are deleted when switching to opted out. In-app messages keep working. The choice is stored on the device and survives restarts; `setOptOut(false)` turns tracking back on.
 
 ---
 
@@ -302,7 +329,7 @@ All query parameters of the link are passed to the message page as `window.galva
 
 ## Push notifications
 
-Galva sends push campaigns through Firebase Cloud Messaging (FCM). You keep your own `FirebaseMessagingService`; Galva needs the device token, and it renders and tracks its own notifications.
+Galva sends push campaigns through Firebase Cloud Messaging (FCM), or through Huawei Push Kit or Amazon Device Messaging on devices without Google Play services ([step 6](#6-devices-without-google-play-services)). You keep your own `FirebaseMessagingService`; Galva needs the device token, and it renders and tracks its own notifications.
 
 ### 1. Set up FCM
 
@@ -323,7 +350,7 @@ class AppMessagingService : FirebaseMessagingService() {
 
     override fun onMessageReceived(message: RemoteMessage) {
         if (Galva.instance.isGalvaNotification(message.data)) {
-            Galva.instance.handlePush(message.data)   // shows + tracks the notification
+            Galva.instance.handlePush(message.data)   // shows the notification and tracks it
             return
         }
         // …your own notifications
@@ -370,7 +397,51 @@ Galva notifications are posted on a channel named **"Galva SDK Notifications"**.
 </application>
 ```
 
-Tapping a Galva notification opens your launcher activity (the notification extras are forwarded to it); taps and dismissals are tracked automatically.
+Tapping a Galva notification opens your launcher activity with the push data as string extras (`communicationId`, `title`, `body`, …); with `singleTop` / `singleTask` they arrive in `onNewIntent`.
+
+### 5. What is tracked
+
+The SDK tracks notification interactions as regular events, with the same names as the iOS SDK. Each event carries the push data as attributes plus `id` (the communication id), and none are sent while the user is opted out.
+
+| Event | When |
+|---|---|
+| `$gv_notification_presented` | The notification was actually posted. Not sent when notifications are off for the app, `POST_NOTIFICATIONS` is not granted or the Galva channel is blocked. Android only: on iOS the system shows the notification. |
+| `$gv_notification_tapped` | The user tapped the notification. |
+| `$gv_notification_dismissed` | The user swiped the notification away or cleared it. |
+
+### 6. Devices without Google Play services
+
+FCM needs Google Play services. Huawei devices without them and Amazon Fire devices get pushes from their own service instead: register that service's token and say which provider issued it. `setPushToken(token)` alone means FCM.
+
+| Devices | Provider | Token |
+|---|---|---|
+| Huawei, without Google Play services | `PushProvider.HMS` | Push Kit: `HmsInstanceId.getToken(appId, "HCM")`, then `onNewToken` |
+| Amazon Fire | `PushProvider.ADM` | Amazon Device Messaging registration ID, from `onRegistered` |
+
+```kotlin
+import com.huawei.hms.push.HmsMessageService
+import com.huawei.hms.push.RemoteMessage
+import io.galva.sdk.Galva
+import io.galva.sdk.PushProvider
+
+class AppHmsMessageService : HmsMessageService() {
+
+    override fun onNewToken(token: String) {
+        Galva.instance.setPushToken(token, PushProvider.HMS)
+    }
+
+    override fun onMessageReceived(message: RemoteMessage) {
+        val data = message.dataOfMap
+        if (Galva.instance.isGalvaNotification(data)) {
+            Galva.instance.handlePush(data)
+        }
+    }
+}
+```
+
+`HmsInstanceId.getToken` blocks, so call it off the main thread. It returns an empty string when the token is delivered later through `onNewToken`; Galva ignores empty tokens. On ADM, pass the registration ID from `onRegistered` with `PushProvider.ADM`, and turn the message intent's extras into a `Map<String, String>` for `isGalvaNotification` and `handlePush`.
+
+A device has one Galva push token: registering a token from another provider replaces the previous one. Sending to HMS or ADM tokens needs Galva's backend to support that provider for your app.
 
 ---
 
@@ -378,17 +449,38 @@ Tapping a Galva notification opens your launcher activity (the notification extr
 
 Galva uses Google Play Billing to run purchases that start **inside** an in-app message (for example a win-back offer). You do not need to write any billing code for that — only add the `billing-ktx` dependency (see [installation](installation.md#2-add-the-dependencies)).
 
-The SDK keeps a local copy of the Play catalog for the products configured in Galva, which you can read if useful:
+Purchases started inside a Galva message are acknowledged by Galva's backend, so you don't need to acknowledge them yourself. To unlock the purchased content, keep refreshing entitlements the way your app already does — Google recommends calling `BillingClient.queryPurchasesAsync()` from `onResume()`, which also picks up purchases your app did not start itself.
+
+### RevenueCat
+
+Using RevenueCat? Add the [`galva-revenuecat`](https://github.com/Galva-io/galva-android-revenuecat) integration instead of wiring billing yourself. Purchases from Galva's messages then go through RevenueCat, and Galva follows RevenueCat's identity:
 
 ```kotlin
-lifecycleScope.launch {
-    Galva.instance.billingManager.catalog.collect { catalog ->
-        // products, base plans, offers and localized prices
-    }
-}
+Galva.configure(this, configuration, integrations = listOf(GalvaIntegration.revenueCat()))
 ```
 
-Purchases started inside a Galva message are acknowledged by Galva's backend, so you don't need to acknowledge them yourself. To unlock the purchased content, keep refreshing entitlements the way your app already does — Google recommends calling `BillingClient.queryPurchasesAsync()` from `onResume()`, which also picks up purchases your app did not start itself.
+### Your own billing layer (purchase controllers)
+
+If your app runs purchases through its own billing layer, install a `GalvaPurchaseController`. Purchases that messages request then run through it instead of Galva's Play Billing flow, so your layer records the purchase and unlocks the entitlement in the same session:
+
+```kotlin
+class BillingPurchaseController : GalvaPurchaseController {
+    override suspend fun purchase(request: GalvaPurchaseRequest): GalvaPurchaseResult {
+        // Run it yourself with request.activity, request.productId, request.basePlanId and
+        // request.offerId, or use Galva's Play flow and record the result:
+        val result = request.purchaseWithPlayBilling()
+        if (result is GalvaPurchaseResult.Completed) MyBilling.record(result.transaction.purchaseToken)
+        return result
+    }
+}
+
+Galva.instance.setPurchaseController(BillingPurchaseController())
+```
+
+- `purchase` is called on the main thread, once per purchase the user starts in a message; the message waits for the result.
+- Return `Completed`, `Pending` or `Cancelled`. Throw a `GalvaPurchaseException` (`ProductUnavailable`, `IneligibleForOffer`, `NetworkError`, …) for failures the message handles specifically; any other exception reaches it as a generic purchase failure.
+- Attach `request.obfuscatedAccountId` to purchases you run yourself when your billing layer allows it: it's the account id Galva attaches to its own purchases.
+- `setPurchaseController(null)` restores Galva's flow. The RevenueCat integration installs its own controller, so don't combine the two.
 
 ---
 
@@ -422,10 +514,10 @@ For diagnostics screens and support reports, `Galva.sdkVersion` returns the SDK 
 ## Calling the SDK from Java
 
 ```java
-import io.galva.common.logger.LogLevel;
-import io.galva.core.protocol.Configuration;
-import io.galva.core.protocol.Environment;
+import io.galva.sdk.Configuration;
+import io.galva.sdk.Environment;
 import io.galva.sdk.Galva;
+import io.galva.sdk.LogLevel;
 
 public class MyApp extends Application {
     @Override
@@ -445,6 +537,8 @@ public class MyApp extends Application {
 // elsewhere
 Galva.getInstance().identify("user_42");
 Galva.getInstance().identify("user_42", "jane@example.com");
+Galva.getInstance().track("AddHabitButtonTapped");
+Galva.getInstance().track("Purchase", Map.of("sku", "pro_yearly", "price", 9.99));
 Galva.getInstance().logout();
 String version = Galva.getSdkVersion();
 ```

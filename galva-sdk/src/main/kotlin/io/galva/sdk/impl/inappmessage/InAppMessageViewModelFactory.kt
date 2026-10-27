@@ -6,7 +6,7 @@ import io.galva.billing.BillingManager
 import io.galva.network.service.IAMService
 
 internal class InAppMessageViewModelFactory(private val billingManager: BillingManager,
-    private val iamService: IAMService) :
+    private val iamService: IAMService?) :
     ViewModelProvider.Factory{
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(InAppMessageViewModel::class.java)) {

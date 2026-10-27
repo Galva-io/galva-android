@@ -61,7 +61,7 @@ internal class PlayBillingConnection(
             override fun onBillingSetupFinished(result: BillingResult) {
                 if (result.responseCode == BillingClient.BillingResponseCode.OK) {
                     attempts = 0
-                    logger.info { "BillingClient connected" }
+                    logger.debug { "BillingClient connected" }
                     deferred.complete(Result.success(Unit))
                 } else {
                     attempts++
@@ -77,7 +77,7 @@ internal class PlayBillingConnection(
             }
 
             override fun onBillingServiceDisconnected() {
-                logger.warn { "BillingClient disconnected — will reconnect on next ensureConnected()" }
+                logger.debug { "BillingClient disconnected; reconnecting on next use" }
                 connectedDeferred = null                              // next call re-connects
             }
         })
@@ -104,7 +104,7 @@ internal class PlayBillingConnection(
     }
 
     override fun endConnection() {
-        logger.info { "Ending BillingClient connection" }
+        logger.debug { "Ending BillingClient connection" }
         billingClient.endConnection()
         connectedDeferred = null
     }

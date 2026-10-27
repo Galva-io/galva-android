@@ -321,7 +321,7 @@ private class InitializedIdentityManager : IdentityManager {
 
     override suspend fun updateUserProperties(properties: JsonObject) = Unit
 
-    override suspend fun setPushToken(token: String) = Unit
+    override suspend fun setPushToken(token: String, platform: String) = Unit
 
     override suspend fun clearPushToken() = Unit
 

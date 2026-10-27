@@ -7,9 +7,9 @@ import io.galva.sdk.Galva
 
 internal class SdkNotificationDismissReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        val communicationId = intent.getStringExtra("communicationId") ?: return
+        val payload = NotificationEvents.payload(intent) ?: return
         // Keep the receiver alive until the event is persisted on the SDK queue.
         val pending = goAsync()
-        Galva.instance.trackPushEvent(communicationId, "push_communication_dismissed") { pending.finish() }
+        Galva.instance.trackNotificationEvent(NotificationEvents.DISMISSED, payload) { pending.finish() }
     }
 }

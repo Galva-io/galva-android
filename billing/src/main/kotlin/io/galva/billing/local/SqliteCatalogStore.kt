@@ -55,12 +55,9 @@ class SqliteCatalogStore(
             withContext(ioDispatcher) {
                 val product = getProduct(sku)
                 if (product != null) {
-                    logger.verbose { "Product found for SKU $sku" }
                     val basePlans = loadBasePlansForProduct(helper.readableDatabase, sku)
-                    logger.verbose { "Loaded ${basePlans.size} base plans for SKU $sku" }
                     ProductCatalog(product, basePlans)
                 } else {
-                    logger.verbose { "No product found for SKU $sku" }
                     null
                 }
             }
@@ -71,12 +68,9 @@ class SqliteCatalogStore(
         return withContext(ioDispatcher) {
             val product = getProduct(sku)
             if (product != null) {
-                logger.verbose { "Product found for SKU $sku" }
                 val basePlans = loadBasePlansForProduct(helper.readableDatabase, sku)
-                logger.verbose { "Loaded ${basePlans.size} base plans for SKU $sku" }
                 ProductCatalog(product, basePlans)
             } else {
-                logger.verbose { "No product found for SKU $sku" }
                 null
             }
         }
@@ -241,7 +235,7 @@ class SqliteCatalogStore(
 
     // ── Writes ──────────────────────────────────────────────────────────────
 
-    override suspend fun replaceAll(catalog: FullCatalog) = withContext(ioDispatcher) {
+    override suspend fun replaceAll(catalog: FullCatalog): Unit = withContext(ioDispatcher) {
         val db = helper.writableDatabase
         db.beginTransaction()
         try {
@@ -255,7 +249,6 @@ class SqliteCatalogStore(
                     bp.offers.forEach { offer ->
                         insertOffer(db, offer.offer, productSku = productCatalog.product.sku)
                         offer.pricingPhases.forEach { phase ->
-                            logger.verbose { "Inserting phase ${phase.id} for product ${productCatalog.product.sku}" }
                             insertPhase(db,bp.basePlan.productSku,offer, phase)
                         }
                     }
@@ -266,7 +259,6 @@ class SqliteCatalogStore(
             db.endTransaction()
         }
         invalidations.tryEmit(Unit)
-        logger.debug { "Catalog replaced: ${catalog.products.size} products" }
     }
 
     override suspend fun clear() {

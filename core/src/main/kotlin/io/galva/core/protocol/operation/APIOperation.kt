@@ -17,7 +17,6 @@ sealed class APIOperation {
         const val IDENTITY_MESSAGE = "IdentityMessage"
         const val CREATE_COMMUNICATION_ENDPOINT_MESSAGE = "CreateCommunicationEndpointMessage"
         const val DELETE_COMMUNICATION_ENDPOINT_MESSAGE = "DeleteCommunicationEndpointMessage"
-        const val TRACK_PUSH_NOTIFICATION_MESSAGE = "TrackPushNotification"
         const val TRACK_MESSAGE = "TrackMessage"
 
     }
@@ -42,14 +41,15 @@ sealed class APIOperation {
             get() = anonymousId
     }
 
-    data class SetPushToken(val anonymousId: String,val token: String) : APIOperation() {
+    /** [platform] is the push service that issued [token]: `fcm`, `hms` or `adm`. */
+    data class SetPushToken(val anonymousId: String,val token: String, val platform: String) : APIOperation() {
         override val opType: String
             get() = CREATE_COMMUNICATION_ENDPOINT_MESSAGE
         override val ownerId: String
             get() = anonymousId
     }
 
-    data class ClearPushToken(val anonymousId: String,val token: String) : APIOperation() {
+    data class ClearPushToken(val anonymousId: String,val token: String, val platform: String) : APIOperation() {
         override val opType: String
             get() = DELETE_COMMUNICATION_ENDPOINT_MESSAGE
         override val ownerId: String
@@ -65,11 +65,6 @@ sealed class APIOperation {
             get() = TRACK_MESSAGE
         override val ownerId: String
             get() = anonymousId
-    }
-
-    data class TrackPushNotification(val communicationId: String,val eventType: String,val timestamp:String ) : APIOperation() {
-        override val opType: String
-            get() = TRACK_PUSH_NOTIFICATION_MESSAGE
     }
 
 }

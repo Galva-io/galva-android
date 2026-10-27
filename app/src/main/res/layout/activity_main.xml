@@ -56,6 +56,11 @@
             style="@style/ControlPanel.Button"
             android:text="@string/action_logout" />
 
+        <Button
+            android:id="@+id/track_event_button"
+            style="@style/ControlPanel.Button"
+            android:text="@string/action_track_event" />
+
         <TextView
             style="@style/ControlPanel.Section"
             android:text="@string/section_privacy" />

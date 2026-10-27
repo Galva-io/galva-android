@@ -2,6 +2,8 @@ package io.galva.localstorage
 
 import io.galva.common.InternalGalvaApi
 import android.content.Context
+import io.galva.common.logger.Logger
+import io.galva.common.logger.NoOpLogger
 import io.galva.localstorage.core.KeyValueStorage
 import io.galva.localstorage.crypto.AesGcmCipher
 import io.galva.localstorage.crypto.KeystoreKeyProvider
@@ -19,9 +21,9 @@ object KeyValueStorageFactory {
         context: Context,
         fileName: String = DEFAULT_FILE_NAME,
         dispatcher: CoroutineDispatcher = Dispatchers.IO,
+        logger: Logger = NoOpLogger,
     ): KeyValueStorage {
-        val app = context.applicationContext
-        return PrefKeyValueStorage(context,fileName = fileName, ioDispatcher = dispatcher)
+        return PrefKeyValueStorage(context, fileName = fileName, ioDispatcher = dispatcher, logger = logger)
     }
 
     /** Keystore-backed AES-GCM encrypted storage. Requires API 23+. */
@@ -31,12 +33,14 @@ object KeyValueStorageFactory {
         context: Context,
         fileName: String = DEFAULT_SECURE_FILE_NAME,
         keyAlias: String = DEFAULT_KEY_ALIAS,
+        logger: Logger = NoOpLogger,
     ): KeyValueStorage {
         val cipher = AesGcmCipher(KeystoreKeyProvider(keyAlias))
         return SecureDataStoreKeyValueStorage(
             context = context,
             fileName = fileName,
             cipher = cipher,
+            logger = logger,
         )
     }
 

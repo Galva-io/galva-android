@@ -1,9 +1,7 @@
 package io.galva.sdk
 
 import android.net.Uri
-import io.galva.common.logger.LogLevel
 import io.galva.common.logger.NoOpLogger
-import io.galva.core.protocol.identity.ProfileProperty
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -38,6 +36,11 @@ class MainThreadBudgetTest {
                 galva.updateProperties(ProfileProperty.Email("user@example.com"), ProfileProperty.Custom("plan", "pro"))
             },
             "logout" to { galva.logout() },
+            "track" to { galva.track("Perf") },
+            "track(attributes)" to { galva.track("Perf", mapOf("sku" to "pro", "price" to 9.99, "trial" to true)) },
+            "checkForMessages" to { galva.checkForMessages() },
+            "currentUserId" to { galva.currentUserId },
+            "isAnonymous" to { galva.isAnonymous },
             "setOptOut" to { galva.setOptOut(false) },
             "isOptedOut" to { galva.isOptedOut },
             "isConfigured" to { galva.isConfigured },

@@ -47,7 +47,7 @@ class SqliteOperationStore(
 
     // ── Writes ──────────────────────────────────────────────────────────────
 
-    override suspend fun insert(op: StoredOperation) = withContext(ioDispatcher) {
+    override suspend fun insert(op: StoredOperation): Unit = withContext(ioDispatcher) {
         val db = helper.writableDatabase
         val values = ContentValues().apply {
             put("id", op.id)
@@ -62,7 +62,6 @@ class SqliteOperationStore(
         // CONFLICT_IGNORE — duplicate ids are skipped, matching `OnConflictStrategy.IGNORE`
         db.insertWithOnConflict("operations", null, values, SQLiteDatabase.CONFLICT_IGNORE)
         invalidations.tryEmit(Unit)
-        logger.verbose { "Inserted ${op.id} (type=${op.type})" }
     }
 
     override suspend fun claimBatch(
@@ -117,7 +116,7 @@ class SqliteOperationStore(
 
             db.setTransactionSuccessful()
             invalidations.tryEmit(Unit)                                // pending count went down
-            logger.debug { "Claimed batch of ${candidates.size} with token $lockToken" }
+            logger.verbose { "Claimed ${candidates.size} operations" }
             candidates
         } finally {
             db.endTransaction()
@@ -142,7 +141,7 @@ class SqliteOperationStore(
         } finally {
             db.endTransaction()
         }
-        logger.debug { "Deleted ${ids.size} operations" }
+        logger.verbose { "Deleted ${ids.size} operations" }
         // No invalidation: deleted rows were locked, so pending count didn't change
     }
 
@@ -168,7 +167,7 @@ class SqliteOperationStore(
             db.endTransaction()
         }
         invalidations.tryEmit(Unit)                                    // pending count went up
-        logger.debug { "Released lock for ${ids.size} operations" }
+        logger.verbose { "Released ${ids.size} operations for retry" }
     }
 
     override suspend fun releaseAllLocks(): Unit = withContext(ioDispatcher) {
@@ -180,7 +179,6 @@ class SqliteOperationStore(
                WHERE lock_token IS NOT NULL"""
         )
         invalidations.tryEmit(Unit)                                    // all locked rows become pending
-        logger.debug { "Released all locks (recovery from prior crashed process)" }
     }
 
     override suspend fun clearAll(): Unit = withContext(ioDispatcher) {
@@ -210,7 +208,7 @@ class SqliteOperationStore(
         val db = helper.writableDatabase
         val deleted = db.delete("operations", "owner_id = ?", arrayOf(ownerId))
         invalidations.tryEmit(Unit)
-        logger.debug { "Cleared $deleted operations of a previous identity" }
+        if (deleted > 0) logger.debug { "Dropped $deleted undelivered operations of the signed-out identity" }
     }
 
     private companion object {

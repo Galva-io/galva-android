@@ -1,5 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Cleartext to localhost only, for the E2E mock backend. See res/xml/network_security_config.xml. -->
-    <application android:networkSecurityConfig="@xml/network_security_config" />
+    <application android:networkSecurityConfig="@xml/network_security_config">
+        <!-- Performance probe (src/perf): each run is a fresh process, without Galva
+             (:perf_baseline) or with it (:perf_sdk). Started by SdkFootprintTest only. -->
+        <activity
+            android:name=".perf.PerfBaselineActivity"
+            android:exported="false"
+            android:process=":perf_baseline" />
+        <activity
+            android:name=".perf.PerfSdkActivity"
+            android:exported="false"
+            android:process=":perf_sdk" />
+    </application>
 </manifest>

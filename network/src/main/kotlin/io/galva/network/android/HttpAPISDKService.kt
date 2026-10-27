@@ -32,21 +32,13 @@ class HttpAPISDKService(
                 RequestBuilder.post(Endpoint.SDK.toUrl(baseURL).plus("/initialize"))
                     .jsonBody(json.encodeToString(request))
                     .build()
-            logger.info {
-                "getInitializeConfig request: ${request.url}, headers: ${request.headers}"
-            }
             httpClient.execute(request).toServiceResult { responseJson ->
                 json.decodeFromString<SDKInitializeResponse>(responseJson)
             }
         } catch (e: NetworkError) {
-            logger.error {
-                "getInitializeConfig failed with NetworkError: ${e.message}, cause: ${e.cause?.message}"
-            }
             ServiceResult.Error(e)
         } catch (e: Exception) {
-            logger.error {
-                "getInitializeConfig failed with Exception: ${e.message}, cause: ${e.cause?.message}"
-            }
+            logger.error(e) { "sdk/initialize failed" }
             ServiceResult.UnknownError(e)
         }
     }

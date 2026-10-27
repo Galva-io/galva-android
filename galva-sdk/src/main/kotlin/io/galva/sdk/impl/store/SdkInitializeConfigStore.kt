@@ -1,5 +1,6 @@
 package io.galva.sdk.impl.store
 
+import io.galva.common.logger.Logger
 import io.galva.core.protocol.SdkConfigStore
 import io.galva.localstorage.core.KeyValueStorage
 import io.galva.localstorage.core.getObject
@@ -15,6 +16,7 @@ import kotlinx.coroutines.flow.Flow
 internal class SdkInitializeConfigStore(
     private val sdkService: SdkService,
     private val keyValueStorage: KeyValueStorage,
+    private val logger: Logger,
 ) : SdkConfigStore {
     override suspend fun loadAndSaveConfig(): SDKInitializeResponse? {
         val config =
@@ -27,9 +29,25 @@ internal class SdkInitializeConfigStore(
                 config.value
             }
 
-            else -> {
+            is ServiceResult.Failure -> {
+                if (config.status == 401 || config.status == 403) {
+                    logger.error {
+                        "sdk/initialize rejected with HTTP ${config.status}: check the apiKey in Configuration " +
+                            "and that it belongs to this app's environment"
+                    }
+                } else {
+                    logger.warn { "sdk/initialize failed with HTTP ${config.status}; using the cached configuration" }
+                }
                 currentConfig()
             }
+
+            is ServiceResult.Error -> {
+                logger.info { "sdk/initialize not reachable (offline?); using the cached configuration" }
+                currentConfig()
+            }
+
+            // Logged by the service.
+            is ServiceResult.UnknownError -> currentConfig()
         }
     }
 

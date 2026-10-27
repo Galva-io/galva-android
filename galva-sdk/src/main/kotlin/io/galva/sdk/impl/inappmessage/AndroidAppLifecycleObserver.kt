@@ -1,6 +1,7 @@
 package io.galva.sdk.impl.inappmessage
 
-import android.util.Log
+import android.os.Handler
+import android.os.Looper
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
@@ -17,7 +18,12 @@ internal class AndroidAppLifecycleObserver(
             if (event == Lifecycle.Event.ON_RESUME) onEvent(AppLifecycleState.FOREGROUND)
             else if(event == Lifecycle.Event.ON_PAUSE) onEvent(AppLifecycleState.BACKGROUND)
         }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        return AutoCloseable { lifecycleOwner.lifecycle.removeObserver(observer) }
+        // Lifecycle observers must be added on the main thread; configure may run elsewhere.
+        onMainThread { lifecycleOwner.lifecycle.addObserver(observer) }
+        return AutoCloseable { onMainThread { lifecycleOwner.lifecycle.removeObserver(observer) } }
+    }
+
+    private fun onMainThread(block: () -> Unit) {
+        if (Looper.myLooper() == Looper.getMainLooper()) block() else Handler(Looper.getMainLooper()).post(block)
     }
 }

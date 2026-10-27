@@ -1,6 +1,7 @@
 package io.galva.sdk.impl.operation
 
 import android.content.Context
+import android.os.SystemClock
 import io.galva.common.utils.AppInfoSource
 import io.galva.common.utils.DateTimeFormatUtils
 import io.galva.common.utils.DeviceUtils
@@ -24,7 +25,6 @@ import io.galva.network.request.messages.DeleteCommunicationEndpointMessage
 import io.galva.network.request.messages.EndpointNotification
 import io.galva.network.request.messages.EndpointNotification.*
 import io.galva.network.request.messages.TrackMessage
-import io.galva.network.request.messages.TrackPushNotificationMessage
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import java.util.Calendar
@@ -114,6 +114,7 @@ internal class DefaultOperationRequestConverter(
             is APIOperation.SetPushToken -> {
                 CreateCommunicationEndpointMessage(
                     endpoint = PushNotification(
+                        platform = operation.platform,
                         token = operation.token,
                     ),
                     timestamp = DateTimeFormatUtils.format(Calendar.getInstance()),
@@ -125,6 +126,7 @@ internal class DefaultOperationRequestConverter(
             is APIOperation.ClearPushToken -> {
                 DeleteCommunicationEndpointMessage(
                     endpoint = PushNotification(
+                        platform = operation.platform,
                         token = operation.token,
                     ),
                     timestamp = DateTimeFormatUtils.format(Calendar.getInstance()),
@@ -142,21 +144,29 @@ internal class DefaultOperationRequestConverter(
                     properties = operation.properties,
                 )
             }
-
-            is APIOperation.TrackPushNotification ->{
-                TrackPushNotificationMessage(
-                    timestamp = DateTimeFormatUtils.format(Calendar.getInstance()),
-                    context = messageContext,
-                    event = operation.eventType,
-                    communicationId = operation.communicationId
-                )
-            }
         }
+    }
+
+    // Fixed for the life of the process: read once rather than per operation (each read is one or
+    // more binder calls: Settings, PackageManager, UiModeManager).
+    private val deviceData by lazy { DeviceUtils.loadDeviceData(context) }
+    private val os by lazy { OsInfoSource.read().run { OS(name, version) } }
+    private val app by lazy { AppInfoSource.read(context)?.run { App(build, name, namespace, version) } }
+
+    // Calls arrive in bursts (identify, properties, track); one network read serves a burst.
+    @Volatile
+    private var cachedNetwork: Pair<Long, Network>? = null
+
+    private fun network(context: Context): Network {
+        val now = SystemClock.elapsedRealtime()
+        cachedNetwork?.let { (readAt, network) -> if (now - readAt < NETWORK_TTL_MS) return network }
+        return NetworkInfoSource.read(context).run { Network(bluetooth, carrier, cellular, wifi) }
+            .also { cachedNetwork = now to it }
     }
 
     private fun createMessageContext(context: Context): MessageContext {
         return MessageContext(
-            device = DeviceUtils.loadDeviceData(context).run {
+            device = deviceData.run {
                 Device(
                     id = id,
                     adTrackingEnabled = advertisingProvider.adTrackingEnabled(),
@@ -171,20 +181,17 @@ internal class DefaultOperationRequestConverter(
             },
             locale = Locale.getDefault().toLanguageTag(),
             timezone = TimeZone.getDefault().id,
-            network = NetworkInfoSource.read(context).run {
-                Network(bluetooth, carrier, cellular, wifi)
-            },
-            os = OsInfoSource.read().run {
-                OS(name, version)
-            },
+            network = network(context),
+            os = os,
+            // Changes with rotation; reading it is a field access.
             screen = ScreenSource.read(context).run {
                 Screen(density, height, width)
             },
-            app = AppInfoSource.read(context)?.run {
-                App(build, name, namespace, version)
-            }
-
+            app = app,
         )
     }
 
+    private companion object {
+        const val NETWORK_TTL_MS = 5_000L
+    }
 }

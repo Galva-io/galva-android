@@ -41,12 +41,12 @@ class WebViewBundleResolver(
     }
 
     suspend fun doDownload(webviewVersion: String): Outcome {
-        logger.info { "Downloading bundle for $webviewVersion" }
+        logger.debug { "Downloading bundle $webviewVersion" }
         return when (val r = downloader.download(webviewVersion)) {
             is ServiceResult.Success -> try {
                 cache.write(webviewVersion, r.value)
                 cache.pruneExcept(webviewVersion)              // housekeeping
-                logger.info { "Bundle saved for $webviewVersion" }
+                logger.debug { "Bundle $webviewVersion saved" }
                 Ready(cache.bundleFile(webviewVersion))
             } catch (t: Throwable) {
                 logger.error(t) { "Failed to write bundle for $webviewVersion" }
@@ -54,17 +54,18 @@ class WebViewBundleResolver(
             }
 
             is ServiceResult.Failure -> {
-                logger.warn { "Bundle download rejected: HTTP ${r.status}" }
+                logger.warn { "Bundle $webviewVersion download rejected: HTTP ${r.status}" }
                 Failed("HTTP ${r.status}")
             }
 
             is ServiceResult.Error -> {
-                logger.error(r.error) { "Bundle download failed" }
+                // Offline is routine: the message is retried on a later poll.
+                logger.info { "Bundle $webviewVersion not downloaded (offline?): ${r.error.message}" }
                 Failed(r.error.message ?: "Network error", r.error)
             }
 
             is ServiceResult.UnknownError -> {
-                logger.error(r.exception) { "Bundle download failed with unknown error" }
+                logger.error(r.exception) { "Bundle $webviewVersion download failed" }
                 Failed("Unknown error: ${r.exception.message}", r.exception)
             }
         }

@@ -8,25 +8,26 @@ import io.galva.sdk.Galva
 internal class SdkNotificationRouterActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val communicationId = intent.getStringExtra("communicationId")
-        if (communicationId == null) {
+        val payload = NotificationEvents.payload(intent)
+        if (payload == null) {
             finish()
         } else {
-            Galva.instance.trackPushEvent(communicationId, "push_communication_opened")
-            launchConsumerMainActivity()
+            Galva.instance.trackNotificationEvent(NotificationEvents.TAPPED, payload)
+            launchConsumerMainActivity(payload)
             finish()
         }
     }
 
-    private fun launchConsumerMainActivity() {
+    private fun launchConsumerMainActivity(payload: Map<String, String>) {
         try {
             val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
 
             if (launchIntent != null) {
                 launchIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
 
-                // Forward the notification extras to the launcher activity.
-                launchIntent.putExtras(intent)
+                // Hand the push data to the launcher activity as plain string extras
+                // (`communicationId`, `title`, `body`, …).
+                payload.forEach { (key, value) -> launchIntent.putExtra(key, value) }
 
                 startActivity(launchIntent)
             }

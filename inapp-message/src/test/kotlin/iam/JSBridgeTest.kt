@@ -73,4 +73,17 @@ class JSBridgeTest {
         assertTrue(callback.calls.isEmpty())
         assertTrue(callback.errors.isEmpty())
     }
+
+    @Test
+    fun `a failing handler is answered with an error instead of crashing the JavaBridge thread`() {
+        val failing = object : JSBridgeCallback by callback {
+            override fun onRequestPurchase(requestId: String, request: PurchaseRequest) = error("boom")
+        }
+
+        JSBridge(failing).postMessage(
+            """{"name":"requestPurchase","requestId":"r1","payload":{"productId":"pro","basePlanId":"monthly"}}"""
+        )
+
+        assertEquals(listOf("r1" to BridgeError.Code.PURCHASE_FAILED), callback.errors)
+    }
 }

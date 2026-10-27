@@ -53,7 +53,6 @@ class HttpUrlConnectionClient(
                     }
                 }
             }
-            logger.debug { "${request.method} ${request.url}" }
             val status = connection.responseCode
             val responseBody = readResponseBody(connection, status)
             val responseHeaders = connection.headerFields
@@ -65,9 +64,9 @@ class HttpUrlConnectionClient(
                 headersBuilder.add(name, value.joinToString(","))
             }
             val durationMs = (System.nanoTime() - startNs) / 1_000_000
-            logger.debug { "${request.method} ${request.url} → $status (${responseBody.length} bytes ,total ${durationMs}ms)" }
-            // print response body if logger is debug
-            logger.debug {
+            logger.debug { "${request.method} ${request.url} → $status (${responseBody.length} bytes, ${durationMs} ms)" }
+            // Bodies can carry user data: VERBOSE only.
+            logger.verbose {
                 if (responseBody.length > 1000) {
                     "${request.method} ${request.url} → $status body:${responseBody.take(1000)}... (truncated)"
                 } else {
@@ -80,14 +79,16 @@ class HttpUrlConnectionClient(
                 headers = headersBuilder.build(),
             )
         } catch (t: IOException) {
-
+            // Offline is routine; the caller logs what the failure means for it.
             val durationMs = (System.nanoTime() - startNs) / 1_000_000
-            logger.error { "${request.method} ${request.url} → IOException: ${t.message} (${durationMs}ms)" }
-            throw t.toNetworkError()
-
-        } finally {
+            logger.debug { "${request.method} ${request.url} → ${t.javaClass.simpleName}: ${t.message} (${durationMs} ms)" }
+            // A failed connection may be half-read: drop it instead of returning it to the pool.
             connection.disconnect()
+            throw t.toNetworkError()
         }
+        // No disconnect() on success: the response stream was read to the end and closed, which
+        // returns the connection to the keep-alive pool. The next request to the backend then
+        // skips DNS, the TCP connect and the TLS handshake.
 
     }
     private fun readResponseBody(connection: HttpURLConnection, status: Int): String {

@@ -3,10 +3,12 @@ package io.galva.sample.e2e
 import android.net.Uri
 import android.os.SystemClock
 import android.util.Log
+import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import io.galva.common.logger.LogLevel
-import io.galva.core.protocol.identity.ProfileProperty
+import io.galva.sdk.LogLevel
+import io.galva.sdk.ProfileProperty
+import io.galva.sample.MainActivity
 import io.galva.sdk.Galva
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -49,6 +51,10 @@ class MainThreadPerformanceTest {
                 samples[name] = List(SAMPLES) { timeMs(call) }.sorted()
             }
         }
+        // The measured updateProperties calls leave ~120 updates on the SDK queue, which a loaded
+        // emulator persists at up to ~1 s each; let them reach the mock so the next test's events
+        // are not stuck behind them.
+        ActivityScenario.launch(MainActivity::class.java).use { drainSdkQueue(DRAIN_TIMEOUT_MS) }
         // The median is the call's own cost; single samples also catch preemption and GC pauses.
         val medians = samples.mapValues { (_, sorted) -> sorted[sorted.size / 2] }
         samples.forEach { (name, sorted) ->
@@ -73,15 +79,18 @@ class MainThreadPerformanceTest {
     private companion object {
         /**
          * configure only records the configuration and registers lifecycle observers; everything
-         * else is built in the background. Measured ~80–100 ms on a loaded emulator (cold debug
-         * process, where first-use class loading dominates), so this leaves room for noise while
-         * still catching heavy work creeping back onto the main thread.
+         * else is built in the background. Typical on the loaded dev emulator: 80–190 ms (cold debug
+         * process, first-use class loading). The old synchronous configure took 1.1–3.6 s there, so
+         * this still catches heavy work moving back to the main thread. A swapping emulator can
+         * spike a single cold start to seconds (zram decompression is billed to the faulting
+         * thread); re-run before treating one failure as a regression.
          */
-        const val CONFIGURE_BUDGET_MS = 500
+        const val CONFIGURE_BUDGET_MS = 1_000
 
         /** Generous for calls that only enqueue or read memory (a 60 Hz frame is 16 ms). */
         const val PER_CALL_BUDGET_MS = 2.0
         const val WARM_UP = 20
         const val SAMPLES = 101
+        const val DRAIN_TIMEOUT_MS = 180_000L
     }
 }

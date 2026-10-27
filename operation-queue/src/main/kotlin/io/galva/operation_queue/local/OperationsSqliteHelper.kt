@@ -16,6 +16,11 @@ class OperationsSqliteHelper(
     DB_VERSION,
 ) {
 
+    init {
+        // Every enqueue is a small commit: write-ahead logging makes those far cheaper.
+        setWriteAheadLoggingEnabled(true)
+    }
+
     override fun onConfigure(db: SQLiteDatabase) {
         db.setForeignKeyConstraintsEnabled(true)
     }

@@ -12,19 +12,22 @@ Add the SDK, identify your users and render the in-app messages Galva sends; Gal
 | **Distribution** | GitHub Packages — `io.galva.sdk:galva-sdk` |
 | **Required peer dependency** | Google Play Billing `billing-ktx` 8.0.0+ |
 | **Threading** | Every public call returns immediately; work runs on a background queue |
+| **Footprint** | Public calls return in microseconds; under 8 MB of extra memory at idle (checked by `scripts/perf.sh`) |
+| **Safety** | Never throws at your app: misconfiguration and unexpected errors are logged, not raised |
 
 ---
 
 ## Features
 
 - **Identity** — anonymous install id from the first launch, linked to your user id on `identify()`; emails are validated on the device.
+- **Events** — `track()` with loose or typed attributes, persisted and batched.
 - **Sessions** — automatic `session_start` with the same 30-minute rule as iOS.
 - **Privacy** — `setOptOut()` stops server-bound tracking and purges pending events.
 - **User properties** — typed built-in traits plus free-form custom properties.
 - **In-app messages** — server-driven, WebView-based messages with a cached bundle and purchases from inside the message; one-line automatic display.
 - **Deep links** — open a targeted message from an email or push; links that arrive before sign-in are replayed after `identify()`.
-- **Push notifications** — FCM token registration, rendering and tap / dismiss tracking for Galva notifications.
-- **Billing** — Play Billing integration with an offline-cached product catalog.
+- **Push notifications** — FCM token registration, rendering, and `$gv_notification_presented` / `tapped` / `dismissed` events for Galva notifications.
+- **Billing** — Play Billing integration with an offline-cached product catalog; purchases can run through your own billing layer (`GalvaPurchaseController`) or RevenueCat ([`galva-revenuecat`](https://github.com/Galva-io/galva-android-revenuecat)).
 - **Offline-first delivery** — updates are persisted to SQLite and retried with backoff.
 
 ---
@@ -81,6 +84,7 @@ class MyApp : Application() {
 ```kotlin
 Galva.instance.identify("user_42", email = "jane@example.com")
 Galva.instance.updateProperties(ProfileProperty.Custom("plan_tier", "pro"))
+Galva.instance.track("Purchase", mapOf("sku" to "pro_yearly", "price" to 9.99))
 
 // on sign-out
 Galva.instance.logout()
@@ -118,7 +122,7 @@ All calls go through `Galva.instance` (`io.galva.sdk.Galva`).
 
 ```kotlin
 // Setup
-Galva.configure(context, configuration)          // static, once, from Application.onCreate()
+Galva.configure(context, configuration, integrations = emptyList())   // static, once, from Application.onCreate()
 Galva.sdkVersion: String
 
 // Identity
@@ -128,6 +132,10 @@ fun logout()
 val currentUserId: String          // userId, or the anonymous id
 val isAnonymous: Boolean
 val obfuscatedAccountId: String
+
+// Events
+fun track(eventName: String, attributes: Map<String, Any?>? = null)
+fun track(event: AppEvent)
 
 // Privacy
 fun setOptOut(optedOut: Boolean)
@@ -141,14 +149,14 @@ fun checkForMessages()             // poll now, outside the foreground cadence
 // Deep links
 fun handleOpenURL(uri: Uri): Boolean        // true when it is a Galva link
 
-// Push (FCM)
-fun setPushToken(token: String)
+// Push (FCM by default; HMS and ADM on devices without Google Play services)
+fun setPushToken(token: String, provider: PushProvider = PushProvider.FCM)
 fun clearPushToken()
 fun isGalvaNotification(data: Map<String, String>): Boolean
 fun handlePush(data: Map<String, String>)
 
 // Billing
-val billingManager: BillingManager
+fun setPurchaseController(controller: GalvaPurchaseController?)   // run message purchases through your billing layer
 
 // Logging
 fun setLogLevel(level: LogLevel)
@@ -156,7 +164,7 @@ fun setEnableLogging(enabled: Boolean)
 fun setLogger(sink: LogSink)
 ```
 
-This is the whole public API (plus `Configuration`, `Environment`, `ProfileProperty`, `LogLevel`, `LogSink`, `Message`, `WorkflowType` and the billing models). Everything else in the SDK's modules is marked `@InternalGalvaApi` and does not compile when used from an app.
+This is the whole public API (plus `AppEvent`, `Configuration`, `Environment`, `ProfileProperty`, `LogLevel`, `LogSink`, `Message`, `WorkflowType`, the billing models, `GalvaIntegration` and the purchase controller types: `GalvaPurchaseController`, `GalvaPurchaseRequest`, `GalvaPurchaseResult`, `GalvaTransaction`, `GalvaPurchaseException`). Building an integration package takes the `@GalvaIntegrationApi` opt-in. Everything else in the SDK's modules is marked `@InternalGalvaApi` and does not compile when used from an app.
 
 ---
 
@@ -177,8 +185,8 @@ GALVA_API_KEY=pk_test_xxxxxxxx
 ## Project structure
 
 ```
-:galva-sdk       ← public facade (Galva) + default implementations — the artifact apps depend on
-:core            ← configuration, environment, operation contracts
+:galva-sdk       ← the whole public API (io.galva.sdk) + default implementations — the artifact apps depend on
+:core            ← operation contracts
 :identity        ← identity model and store
 :operation-queue ← persistent batching queue (SQLite)
 :network         ← HTTP client and API services
@@ -190,7 +198,7 @@ GALVA_API_KEY=pk_test_xxxxxxxx
 :app             ← sample app
 ```
 
-Apps depend only on `io.galva.sdk:galva-sdk`; the other modules are published as its transitive dependencies.
+Apps depend only on `io.galva.sdk:galva-sdk` and compile only against it. The other modules are published as its runtime dependencies, so their classes are not on the app's compile classpath.
 
 ---
 

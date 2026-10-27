@@ -60,14 +60,14 @@ class SqliteEntitlementStore(
         }
         db.insertWithOnConflict("entitlement", null, values, SQLiteDatabase.CONFLICT_REPLACE)
         invalidations.tryEmit(Unit)
-        logger.info { "Saved entitlement: ${entitlement.productId} (state=${entitlement.state})" }
+        logger.debug { "Saved entitlement: ${entitlement.productId} (state=${entitlement.state})" }
     }
 
     override suspend fun clear(): Unit = withContext(ioDispatcher) {
         val db = helper.writableDatabase
         db.execSQL("DELETE FROM entitlement")
         invalidations.tryEmit(Unit)
-        logger.info { "Cleared entitlement" }
+        logger.debug { "Cleared entitlement" }
     }
 
     private fun readEntitlement(cursor: android.database.Cursor): Entitlement = Entitlement(

@@ -35,6 +35,46 @@ class IdentityE2ETest {
     }
 
     @Test
+    fun track_uploadsTrackMessageWithJsonAttributesOnly() {
+        val eventName = uniqueId("E2EPurchase")
+        ActivityScenario.launch(MainActivity::class.java).use {
+            Galva.instance.track(
+                eventName,
+                mapOf(
+                    "sku" to "pro_yearly",
+                    "price" to 9.99,
+                    "count" to 2,
+                    "nested" to mapOf("ok" to true),
+                    "unsupported" to Any(),
+                ),
+            )
+
+            val event = MockBackend.awaitBatchMessage("track of $eventName") {
+                it.optString("type") == "track" && it.optString("event") == eventName
+            }
+            val properties = event.getJSONObject("properties")
+            assertEquals("pro_yearly", properties.getString("sku"))
+            assertEquals(9.99, properties.getDouble("price"), 0.0)
+            assertEquals(2, properties.getInt("count"))
+            assertTrue(properties.getJSONObject("nested").getBoolean("ok"))
+            assertFalse("non-JSON attribute should be dropped: $properties", properties.has("unsupported"))
+            assertTrue("anonymousId missing: $event", event.optString("anonymousId").isNotEmpty())
+        }
+    }
+
+    @Test
+    fun trackFromControlPanel_uploadsDemoEvent() {
+        ActivityScenario.launch(MainActivity::class.java).use {
+            ControlPanel.trackEvent()
+
+            val event = MockBackend.awaitBatchMessage("DemoButtonTapped track event") {
+                it.optString("type") == "track" && it.optString("event") == "DemoButtonTapped"
+            }
+            assertEquals("control_panel", event.getJSONObject("properties").getString("screen"))
+        }
+    }
+
+    @Test
     fun identify_fromControlPanel_uploadsIdentifyWithEndUserId() {
         val userId = uniqueId("user")
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->

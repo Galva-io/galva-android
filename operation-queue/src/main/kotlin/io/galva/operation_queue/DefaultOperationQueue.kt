@@ -8,10 +8,12 @@ import io.galva.common.logger.NoOpLogger
 import io.galva.operation_queue.local.StoredOperation
 import io.galva.operation_queue.networkgate.NetworkGate
 import io.galva.operation_queue.policy.BatchPolicy
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -38,10 +40,8 @@ class DefaultOperationQueue(
     private val children = mutableListOf<Job>()
 
     override fun start() {
-        logger.info {
-            "starting operation queue, releasing locks and launching consumer job"
-        }
-        if (consumerJob != null) return
+        if (consumerJob?.isActive == true) return
+        logger.debug { "Operation queue started" }
         consumerJob = scope.launch {
             store.releaseAllLocks()
             consumeLoop()
@@ -50,9 +50,7 @@ class DefaultOperationQueue(
     }
 
     override suspend fun enqueue(payload: String, type: String, id: String?, ownerId: String?) {
-        logger.verbose {
-            "enqueue: adding operation to store (id=${id ?: "gen"}, type=$type) payload =${payload}"
-        }
+        logger.verbose { "Enqueued $type: $payload" }
         store.insert(
             StoredOperation(
                 id = id ?: idGen.next(),
@@ -65,7 +63,7 @@ class DefaultOperationQueue(
         )
         maxStoredCount?.let { cap ->
             val dropped = store.trimToNewest(cap)
-            if (dropped > 0) logger.warn { "enqueue: store cap $cap exceeded, dropped $dropped oldest operations" }
+            if (dropped > 0) logger.warn { "Queue holds more than $cap operations; dropped the $dropped oldest" }
         }
         enqueueWake.trySend(Unit)
     }
@@ -85,9 +83,7 @@ class DefaultOperationQueue(
     }
 
     override fun stop() {
-        logger.info {
-            "stopping operation queue, cancelling consumer job and children"
-        }
+        if (consumerJob != null) logger.debug { "Operation queue paused" }
         consumerJob?.cancel()
         children.forEach { it.cancel() }
         consumerJob = null
@@ -95,9 +91,6 @@ class DefaultOperationQueue(
 
     private suspend fun consumeLoop() {
         while (currentCoroutineContext().isActive) {
-            logger.debug {
-                "process queue: starting"
-            }
             batchPolicy.awaitFlush(
                 pendingCount = {
                     store.pendingCount().first()
@@ -114,7 +107,15 @@ class DefaultOperationQueue(
                 gate.awaitOnline()
                 continue
             }
-            sendNextBatch()
+            try {
+                sendNextBatch()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // e.g. a disk error: keep the queue alive and retry later instead of stopping it.
+                logger.error(e) { "Operation queue error; retrying in ${STORE_ERROR_DELAY_MS / 1000} s" }
+                delay(STORE_ERROR_DELAY_MS)
+            }
         }
     }
 
@@ -127,35 +128,36 @@ class DefaultOperationQueue(
         while (currentCoroutineContext().isActive) {
             val batch = store.claimBatch(batchPolicy.maxBatchSize, lockToken, clock.nowMs())
             if (batch.isEmpty()) return
-            logger.debug {
-                "process queue: sending ${batch.size} operations"
-            }
             val ids = batch.map { it.id }
             val error = sender.send(batch).exceptionOrNull()
             when {
                 error == null -> {
-                    logger.debug { "process queue: batch sent successfully, deleting from store" }
+                    logger.debug { "Sent ${batch.size} operations" }
                     store.delete(ids)
                     return
                 }
 
                 error is PermanentSendException -> {
-                    logger.error(error) {
-                        "process queue: backend rejected batch permanently, dropping ${batch.size} operations"
-                    }
+                    logger.error(error) { "Backend rejected a batch; dropped its ${batch.size} operations" }
                     store.delete(ids)
                     return
                 }
 
                 else -> {
                     store.release(ids)                               // unlock + bump retry_count
-                    logger.warn(error) {
-                        "process queue: failed to send batch, retrying after backoff"
+                    // Offline and server hiccups are routine and retried: no stack trace.
+                    logger.info {
+                        "Batch of ${batch.size} operations not sent (${error.message ?: error.javaClass.simpleName}); " +
+                            "retrying with backoff"
                     }
                     retryPolicy.backoff(batch.maxOf { it.retryCount } + 1, error)
                     if (!gate.isOnline()) return                     // consumeLoop waits for connectivity
                 }
             }
         }
+    }
+
+    private companion object {
+        const val STORE_ERROR_DELAY_MS = 30_000L
     }
 }

@@ -23,6 +23,8 @@ jobs:
             gradle-task: lint
           - name: Unit tests
             gradle-task: test
+          - name: Public API
+            gradle-task: ":galva-sdk:apiCheck"
 
     steps:
       - name: Check out repository

@@ -12,6 +12,7 @@
     <string name="action_identify">Identify</string>
     <string name="action_set_email">Set email property</string>
     <string name="action_logout">Log out</string>
+    <string name="action_track_event">Track \"DemoButtonTapped\"</string>
     <string name="action_opt_out">Opt out of tracking</string>
     <string name="action_check_messages">Check for messages</string>
     <string name="action_open_deep_link">Open sample deep link</string>

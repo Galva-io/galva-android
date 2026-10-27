@@ -15,6 +15,10 @@ abstract class AndroidLibraryConventionPlugin : Plugin<Project> {
             extensions.configure<LibraryExtension> {
                 configAndroidKotlin(this)
                 buildFeatures.buildConfig = true
+                // SDK modules opt in to @InternalGalvaApi module-wide through the compiler (see
+                // configAndroidKotlin), which also rejects any missing opt-in at compile time. This
+                // lint check doesn't see compiler opt-ins and would flag every internal call.
+                lint.disable += "UnsafeOptInUsageError"
             }
         }
     }

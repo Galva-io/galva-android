@@ -1,6 +1,8 @@
 package io.galva.localstorage
 
 import io.galva.common.InternalGalvaApi
+import io.galva.common.logger.Logger
+import io.galva.common.logger.NoOpLogger
 import android.content.Context
 import android.content.SharedPreferences
 import io.galva.localstorage.core.KeyValueStorage
@@ -21,6 +23,7 @@ class PrefKeyValueStorage(
     fileName: String = "galva-prefs",
     private val json: Json = DEFAULT_JSON,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val logger: Logger = NoOpLogger,
 ) : KeyValueStorage {
     private val prefs: SharedPreferences =
         context.applicationContext.getSharedPreferences(fileName, Context.MODE_PRIVATE)
@@ -163,6 +166,7 @@ class PrefKeyValueStorage(
             try {
                 json.decodeFromString(serializer, jsonString)
             } catch (e: Exception) {
+                logger.warn(e) { "Stored value for \"$key\" could not be read; ignoring it" }
                 null
             }
         }
@@ -175,6 +179,7 @@ class PrefKeyValueStorage(
                 try {
                     json.decodeFromString(serializer, jsonString)
                 } catch (e: Exception) {
+                    logger.warn(e) { "Stored value for \"$key\" could not be read; ignoring it" }
                     null
                 }
             }

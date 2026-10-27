@@ -2,6 +2,7 @@ package io.galva.sdk.impl.identity
 
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 
@@ -32,6 +33,21 @@ class IdentityManagerTest {
         assertEquals("u1", state.userId)
         assertEquals("test@email.com", state.email)
         assertEquals(state, store.load())
+    }
+
+    @Test
+    fun `push token keeps its platform, and clearing drops both`() = runTest {
+        manager.initialize()
+
+        manager.setPushToken("hms-token", "hms")
+        assertEquals("hms-token", manager.state.value.pushToken)
+        assertEquals("hms", manager.state.value.pushPlatform)
+        assertEquals(manager.state.value, store.load())
+
+        manager.clearPushToken()
+        assertNull(manager.state.value.pushToken)
+        assertNull(manager.state.value.pushPlatform)
+        assertEquals(manager.state.value, store.load())
     }
 
 }

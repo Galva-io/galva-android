@@ -14,6 +14,7 @@ import io.galva.billing.model.ProductType
 import io.galva.billing.store.CatalogStore
 import io.galva.billing.store.EntitlementStore
 import io.galva.common.logger.Logger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -23,6 +24,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 
 internal class PlayBillingLauncher(
     private val billingClient: BillingClient,
@@ -36,13 +38,27 @@ internal class PlayBillingLauncher(
 
     ) : BillingLauncher {
     private var storefrontCountryCode: String? = null
+    /**
+     * The Play storefront country, or null when Play can't tell quickly. Only a hint (callers fall
+     * back to the device locale), so it never throws and never waits long: a device without Play
+     * would otherwise hold up every message.
+     */
     override suspend fun loadStorefrontCountryCode(): String? {
-        if (storefrontCountryCode != null) {
-            return storefrontCountryCode
+        storefrontCountryCode?.let { return it }
+        return try {
+            withTimeoutOrNull(STOREFRONT_TIMEOUT) {
+                connection.ensureConnectedWithRetry()
+                queryStorefrontCountryCode()
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.debug { "Storefront country unavailable: ${e.message}" }
+            null
         }
-        withTimeoutOrNull(purchaseTimeout) {
-            connection.ensureConnectedWithRetry()
-        }
+    }
+
+    private suspend fun queryStorefrontCountryCode(): String? {
         return suspendCancellableCoroutine { continuation ->
             billingClient.getBillingConfigAsync(
                 GetBillingConfigParams.newBuilder().build(),
@@ -271,4 +287,7 @@ internal class PlayBillingLauncher(
         }
     }
 
+    private companion object {
+        val STOREFRONT_TIMEOUT = 5.seconds
+    }
 }

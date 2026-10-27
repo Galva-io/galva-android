@@ -38,7 +38,12 @@ internal class InAppMessageAutoDisplay(
                 if (activity == null) {
                     logger.info { "In-app message ${message.id} not shown — no visible activity" }
                 } else {
-                    manager.showMessage(activity, message)
+                    // One failure must not end the collection: later messages still show.
+                    try {
+                        manager.showMessage(activity, message)
+                    } catch (e: Exception) {
+                        logger.error(e) { "In-app message ${message.id} could not be shown" }
+                    }
                 }
             }
         }

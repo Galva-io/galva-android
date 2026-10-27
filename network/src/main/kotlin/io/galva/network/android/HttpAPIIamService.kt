@@ -29,9 +29,6 @@ class HttpAPIIamService(
     override fun isValidPath(path: String): Boolean = ProxyUrlResolver.resolve(path, baseURL) != null
 
     override suspend fun apiFetch(apiFetchRequest: APIFetchRequest): ServiceResult<APIFetchResult> {
-        logger.debug {
-            "apiFetch: ${apiFetchRequest.method} ${apiFetchRequest.path}"
-        }
         val url = ProxyUrlResolver.resolve(apiFetchRequest.path, baseURL)
             ?: return ServiceResult.UnknownError(
                 IllegalArgumentException("apiFetch path is invalid or targets a disallowed origin")
@@ -55,10 +52,11 @@ class HttpAPIIamService(
         } catch (e: CancellationException) {
             throw e
         } catch (e: NetworkError) {
-            logger.warn(e) { "apiFetch transport error" }
+            // Reported to the page as a transport error; offline is routine.
+            logger.debug { "apiFetch ${apiFetchRequest.method} ${apiFetchRequest.path} not sent: ${e.message}" }
             ServiceResult.Error(e)
         } catch (e: Exception) {
-            logger.warn(e) { "apiFetch failed" }
+            logger.error(e) { "apiFetch ${apiFetchRequest.method} ${apiFetchRequest.path} failed" }
             ServiceResult.UnknownError(e)
         }
     }

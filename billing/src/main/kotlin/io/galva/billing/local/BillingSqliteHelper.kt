@@ -11,6 +11,10 @@ import android.database.sqlite.SQLiteOpenHelper
     DB_VERSION,
 ) {
 
+    init {
+        setWriteAheadLoggingEnabled(true)
+    }
+
     override fun onConfigure(db: SQLiteDatabase) {
         // Enable foreign keys for CASCADE deletes
         db.setForeignKeyConstraintsEnabled(true)
