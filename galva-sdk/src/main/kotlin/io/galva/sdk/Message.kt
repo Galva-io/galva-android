@@ -13,6 +13,12 @@ public data class Message @JvmOverloads constructor(
     val createdAt: String? = null,
 )
 
+/** Receives in-app messages from [Galva.observeInAppMessages]. */
+public fun interface InAppMessageListener {
+    /** Called on the main thread. Pass [message] to [Galva.showMessage] to render it, or skip it. */
+    public fun onInAppMessage(message: Message)
+}
+
 /** Workflow categories surfaced by the server. New values may be added over time. */
 public enum class WorkflowType {
     CANCELLATION_RECOVERY,

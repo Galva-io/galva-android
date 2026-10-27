@@ -67,7 +67,7 @@ Galva's backend acknowledges purchases made inside a message, but your app decid
 
   ```bash
   adb shell am start -W -a android.intent.action.VIEW \
-    -d "gvYOURSCHEME://openCommunication?communicationId=<id>" your.package.name
+    -d "gv-xYkIIqntk5UIIkHN://openCommunication?communicationId=<id>" your.package.name
   ```
 
 ## Push notifications do not appear

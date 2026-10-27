@@ -27,7 +27,7 @@ Your app                         Galva SDK                              Galva ba
 Galva.configure(...)      ───▶   anonymous id, sdk/initialize    ───▶   resolves your app from the API key
 identify / updateProperties ─▶   persisted to SQLite, batched    ───▶   ingests, attributes
                                  ◀── pending in-app message ─────────   workflow decides who / when
-getInAppMessage().collect ─▶     showMessage() renders a WebView
+observeInAppMessages(...) ─▶     showMessage() renders a WebView
 ```
 
 - Every public call is **fire-and-forget**: it returns immediately and the work runs on a background queue, in the order you made the calls.
@@ -198,25 +198,36 @@ A message that arrives while no activity of your app is visible is skipped. Use 
 
 ### Manual display
 
-Collect the message stream while your UI is visible — usually in your main / root activity:
+Observe the messages from your main / root activity and pass each one to `showMessage`. `observeInAppMessages(owner, listener)` calls the listener on the main thread while `owner` (an activity or fragment) is resumed, and stops by itself when it is destroyed. It works the same from Kotlin and Java:
 
 ```kotlin
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.repeatOnLifecycle
 import io.galva.sdk.Galva
-import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.RESUMED) {
-                Galva.instance.getInAppMessage().collect { message ->
-                    Galva.instance.showMessage(this@MainActivity, message)
-                }
-            }
+        Galva.instance.observeInAppMessages(this) { message ->
+            Galva.instance.showMessage(this, message)
+        }
+    }
+}
+```
+
+```java
+Galva.getInstance().observeInAppMessages(this, message ->
+        Galva.getInstance().showMessage(this, message));
+```
+
+An exception thrown by the listener is logged and doesn't stop later messages.
+
+In Kotlin, the same messages are available as a `Flow` from `getInAppMessage()`, for coroutine code:
+
+```kotlin
+lifecycleScope.launch {
+    repeatOnLifecycle(Lifecycle.State.RESUMED) {
+        Galva.instance.getInAppMessage().collect { message ->
+            Galva.instance.showMessage(this@MainActivity, message)
         }
     }
 }
@@ -264,8 +275,8 @@ Galva.instance.getInAppMessage().collect { message ->
 
 ### Notes
 
-- **Gate it if you need to.** Inside `collect` you can skip or delay `showMessage` (for example during onboarding or checkout). Not collecting at all means nothing is rendered.
-- **Collect while your UI is visible.** Checking for messages does not depend on collectors; a message published while nothing is collecting is skipped for the rest of the app session. If your app has several top-level activities, collect in each of them (for example from a base activity) — all collectors receive the same message, and `showMessage` ignores a message that is already being shown.
+- **Gate it if you need to.** In the listener (or `collect`) you can skip or delay `showMessage` (for example during onboarding or checkout). Not observing at all means nothing is rendered.
+- **Observe while your UI is visible.** Checking for messages does not depend on observers; a message published while nothing is observing is skipped for the rest of the app session. If your app has several top-level activities, observe in each of them (for example from a base activity) — all observers receive the same message, and `showMessage` ignores a message that is already being shown.
 - **Check on demand.** Call `Galva.instance.checkForMessages()` after a user action that should trigger a workflow (for example finishing onboarding), instead of waiting for the next return to the foreground.
 - The message is shown in a full-screen activity provided by the SDK; the user closes it from inside the message or with the back button.
 
@@ -273,7 +284,7 @@ Galva.instance.getInAppMessage().collect { message ->
 
 ## Deep links
 
-Emails and pushes sent by Galva can link straight into a message in your app, using a custom scheme that starts with `gv`. Your exact scheme is shown in the Galva dashboard next to your API key.
+Emails and pushes sent by Galva can link straight into a message in your app, using your app's custom scheme (`gv-…`, for example `gv-xYkIIqntk5UIIkHN`). Your exact scheme is shown in the Galva dashboard next to your API key.
 
 ### 1. Declare the scheme
 
@@ -289,7 +300,8 @@ On the activity that should receive the link (usually the launcher activity):
         <action android:name="android.intent.action.VIEW" />
         <category android:name="android.intent.category.DEFAULT" />
         <category android:name="android.intent.category.BROWSABLE" />
-        <data android:scheme="gvYOURSCHEME" />
+        <!-- Your scheme from the Galva dashboard -->
+        <data android:scheme="gv-xYkIIqntk5UIIkHN" />
     </intent-filter>
 </activity>
 ```
@@ -318,7 +330,7 @@ private fun routeLink(uri: Uri) {
 The supported route is:
 
 ```text
-gvYOURSCHEME://openCommunication?communicationId=<id>
+gv-xYkIIqntk5UIIkHN://openCommunication?communicationId=<id>
 ```
 
 All query parameters of the link are passed to the message page as `window.galvaDeepLinkParams`, so a tap carries its campaign context with it.
@@ -548,7 +560,18 @@ Galva.getInstance().logout();
 String version = Galva.getSdkVersion();
 ```
 
-Collecting `getInAppMessage()` requires a coroutine; from Java, do it in a small Kotlin helper (for example the `MainActivity` snippet above).
+In-app messages come through `observeInAppMessages`, which needs no coroutines:
+
+```java
+public class MainActivity extends AppCompatActivity {
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        Galva.getInstance().observeInAppMessages(this, message ->
+                Galva.getInstance().showMessage(this, message));
+    }
+}
+```
 
 ---
 
@@ -558,7 +581,7 @@ Collecting `getInAppMessage()` requires a coroutine; from Java, do it in a small
 - [ ] `Galva.configure(...)` in `Application.onCreate()` with an explicit `env`.
 - [ ] API key kept out of source control.
 - [ ] `identify()` after sign-in **and** on every start with a restored session; `logout()` on sign-out.
-- [ ] In-app messages: `autoDisplayInAppMessages = true`, or `getInAppMessage()` collected while your UI is visible with `showMessage()` called with an `Activity`.
+- [ ] In-app messages: `observeInAppMessages` (or `getInAppMessage()` in Kotlin) from your main activity, calling `showMessage()` with that `Activity`; or `autoDisplayInAppMessages = true`.
 - [ ] `gv…` scheme declared, and `handleOpenURL` called from `onCreate` and `onNewIntent`.
 - [ ] If your app offers a privacy setting, it calls `setOptOut`.
 - [ ] Push: `setPushToken` from `onNewToken` and on start-up, `handlePush` in `onMessageReceived`, `POST_NOTIFICATIONS` requested, notification icon meta-data set.

@@ -6,6 +6,10 @@ import android.content.Context
 import android.net.Uri
 import android.os.Build
 import androidx.annotation.VisibleForTesting
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import io.galva.billing.BillingManager
 import io.galva.common.lifecycle.AppLifecycleObserver
 import io.galva.common.lifecycle.AppLifecycleState
@@ -730,12 +734,42 @@ public class Galva @VisibleForTesting internal constructor(
 
     /**
      * Messages published by the SDK: at most one per return to the foreground (or
-     * [checkForMessages]). Collect while your UI is visible and pass each to [showMessage], or set
+     * [checkForMessages]). Collect while your UI is visible and pass each to [showMessage]. From
+     * Java, or without coroutines, use [observeInAppMessages]; or set
      * `Configuration(autoDisplayInAppMessages = true)` instead.
      */
     public fun getInAppMessage(): Flow<Message> = flow {
         ready.await()
         _inAppMessageManager?.let { manager -> emitAll(manager.messages.map { it.toPublic() }) }
+    }
+
+    /**
+     * Calls [listener] on the main thread with each message published while [owner] is resumed,
+     * typically to pass it to [showMessage]; stops for good when [owner] is destroyed. The callback
+     * counterpart of [getInAppMessage], for Java and for code without coroutines:
+     *
+     * ```java
+     * Galva.getInstance().observeInAppMessages(this, message -> Galva.getInstance().showMessage(this, message));
+     * ```
+     */
+    public fun observeInAppMessages(owner: LifecycleOwner, listener: InAppMessageListener) {
+        observe(owner, getInAppMessage(), listener)
+    }
+
+    @VisibleForTesting
+    internal fun observe(owner: LifecycleOwner, messages: Flow<Message>, listener: InAppMessageListener) {
+        owner.lifecycleScope.launch {
+            owner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                messages.collect { message ->
+                    try {
+                        listener.onInAppMessage(message)
+                    } catch (e: Exception) {
+                        // An app bug: keep delivering the next messages.
+                        logger.error(e) { "InAppMessageListener failed on message ${message.id}" }
+                    }
+                }
+            }
+        }
     }
 
     public fun showMessage(activity: Activity, message: Message) {

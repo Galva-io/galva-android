@@ -46,7 +46,9 @@ dependencies {
     implementation(libs.androidx.activity.ktx)
     implementation(libs.androidx.core)
     implementation(libs.androidx.lifecycle.process)
+    // Public API: getInAppMessage() returns a Flow, observeInAppMessages() takes a LifecycleOwner.
     api(libs.kotlinx.coroutines.core)
+    api(libs.androidx.lifecycle.runtime)
 
     testImplementation(libs.billing.ktx)
     testImplementation(libs.androidx.test.core.ktx)

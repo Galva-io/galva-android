@@ -30,8 +30,8 @@ Thanks for helping out. This guide covers the local setup, how the project is or
 ## Project layout
 
 ```
-:galva-sdk       public facade (io.galva.sdk.Galva) + default implementations (impl/, all internal)
-:core            Configuration, Environment, ProfileProperty, operation contracts
+:galva-sdk       the whole public API (io.galva.sdk) + default implementations (impl/, all internal)
+:core            operation contracts
 :identity        identity model and store
 :operation-queue persistent batching queue (SQLite)
 :network         HTTP client and API services
@@ -43,7 +43,7 @@ Thanks for helping out. This guide covers the local setup, how the project is or
 :app             sample / demo app and the instrumented E2E suite
 ```
 
-Apps depend only on `io.galva.sdk:galva-sdk`; the other modules are published as its dependencies.
+Apps depend only on `io.galva.sdk:galva-sdk` and compile only against it: the other modules are published as its runtime dependencies. The developer-facing setup is in [Readme.md](Readme.md); keep it to what apps need.
 
 ---
 

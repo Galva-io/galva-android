@@ -131,8 +131,6 @@ class MyApp : Application() {
                 apiKey = BuildConfig.GALVA_API_KEY,
                 env = if (BuildConfig.DEBUG) Environment.Development else Environment.Production,
                 logLevel = if (BuildConfig.DEBUG) LogLevel.DEBUG else LogLevel.WARN,
-                // Shows in-app messages on the visible activity; leave it out to show them yourself.
-                autoDisplayInAppMessages = true,
             ),
         )
     }
