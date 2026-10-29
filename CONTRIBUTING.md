@@ -138,13 +138,13 @@ Pull requests run lint and unit tests on CI (`.github/workflows/pull-request-che
 2. Merge to `main`. The `Publish SDK to Maven Central` workflow signs and publishes all modules to Maven Central: a `-SNAPSHOT` version to Central's snapshot repository, any other version as a release, which the job waits on until it is published. Maven Central never accepts the same release version twice, so bump `VERSION_NAME` before merging the next release. The workflow can also be started by hand from the Actions tab.
 3. Update the version shown in the docs if the install instructions changed.
 
-Pushes to `identity-module` also publish to GitHub Packages (`https://maven.pkg.github.com/Galva-io/galva-android`), through the `Publish SDK to GitHub Packages` workflow.
+Publishing a `-SNAPSHOT` needs snapshots enabled for the `io.galva.sdk` namespace in the Central Portal (Namespaces → Enable SNAPSHOTs).
 
-The publishing workflows need these repository secrets:
+The workflow needs these repository secrets:
 
 | Secret | Value |
 |---|---|
-| `SONATYPE_USERNAME`, `SONATYPE_PASSWORD` | A Central Portal user token (Account → Generate User Token), not the portal login. Maven Central only. |
+| `SONATYPE_USERNAME`, `SONATYPE_PASSWORD` | A Central Portal user token (Account → Generate User Token), not the portal login |
 | `SIGNING_KEY` | The ASCII-armored GPG private key that signs the artifacts |
 | `SIGNING_KEY_ID` | Its key ID |
 | `SIGNING_KEY_PASSWORD` | Its passphrase |

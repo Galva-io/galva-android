@@ -564,7 +564,7 @@ public class MainActivity extends AppCompatActivity {
 
 ## Integration checklist
 
-- [ ] `galva-sdk` and `billing-ktx` 8.0.0+ added; GitHub Packages credentials configured.
+- [ ] `galva-sdk` (from Maven Central) and `billing-ktx` 8.0.0+ added.
 - [ ] `Galva.configure(...)` in `Application.onCreate()` with an explicit `env`.
 - [ ] API key kept out of source control.
 - [ ] `identify()` after sign-in **and** on every start with a restored session; `logout()` on sign-out.

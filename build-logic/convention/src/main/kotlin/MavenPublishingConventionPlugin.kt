@@ -45,6 +45,11 @@ class MavenPublishingConventionPlugin : Plugin<Project> {
 
             publishToMavenCentral(validateDeployment = DeploymentValidation.PUBLISHED)
             signAllPublications()
+            // Only Maven Central needs signed artifacts: publishToMavenLocal also works on a machine
+            // without the signing key, and still signs where the key is set.
+            extensions.configure<SigningExtension> {
+                isRequired = publishTarget == "mavenCentral"
+            }
 
             coordinates(
                 groupId = property("GROUP") as String,
@@ -87,21 +92,6 @@ class MavenPublishingConventionPlugin : Plugin<Project> {
                         rootProject.layout.buildDirectory.dir("repo")
                     )    // → build/repo/
                 }
-                // GitHub Packages
-                maven {
-                    name = "GitHubPackages"
-                    url  = uri(
-                        "https://maven.pkg.github.com/Galva-io/galva-android"
-                    )
-                    credentials {
-                        username = stringProperty("gpr.user")
-                            ?: System.getenv("GITHUB_ACTOR")
-                                    ?: ""
-                        password = stringProperty("gpr.token")
-                            ?: System.getenv("GITHUB_TOKEN")
-                                    ?: ""
-                    }
-                }
             }
         }
     }
@@ -120,13 +110,11 @@ class MavenPublishingConventionPlugin : Plugin<Project> {
             taskNames.any { it.contains("publishallpublicationstomavencentralrepository", ignoreCase = true) } -> "mavenCentral"
             taskNames.any { it.contains("publishToMavenCentral", ignoreCase = true) } -> "mavenCentral"
             taskNames.any { it.contains("publishAndReleaseToMavenCentral", ignoreCase = true) } -> "mavenCentral"
-            taskNames.any { it.contains("publishAllPublicationsToGitHubPackagesRepository", ignoreCase = true) } -> "githubPackages"
             else -> "local"
         }
     }
     private fun publishTargetToEnv(target: String): String = when (target) {
         "mavenLocal" -> "DEVELOPMENT"
-        "githubPackages" -> "PRODUCTION"
         "mavenCentral" -> "PRODUCTION"
         else -> "DEVELOPMENT"
     }

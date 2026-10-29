@@ -31,31 +31,20 @@ Java-only apps are supported (see [Java](integration-guide.md#calling-the-sdk-fr
 
 ## 1. Add the Galva Maven repository
 
-The SDK is published to **GitHub Packages**:
+The SDK is published to [**Maven Central**](https://central.sonatype.com/artifact/io.galva.sdk/galva-sdk), which needs no credentials. New Android projects already list it; check your project's `settings.gradle.kts`:
 
-```
-https://maven.pkg.github.com/Galva-io/galva-android
-```
-
-GitHub Packages requires authentication for every download, even for public packages. You need:
-
-- a GitHub username, and
-- a [personal access token (classic)](https://github.com/settings/tokens) with the **`read:packages`** scope.
-
-### Store the credentials (never commit them)
-
-Put them in your **user-level** Gradle properties file — `~/.gradle/gradle.properties` on macOS/Linux, `%USERPROFILE%\.gradle\gradle.properties` on Windows:
-
-```properties
-gpr.user=your-github-username
-gpr.key=ghp_xxxxxxxxxxxxxxxxxxxx
+```kotlin
+dependencyResolutionManagement {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
 ```
 
-On CI, provide the same values as environment variables instead (`GPR_USER` / `GPR_KEY` below), for example from your CI secret store.
+### Pre-release snapshots
 
-### Register the repository
-
-In your project's `settings.gradle.kts`:
+`-SNAPSHOT` versions are published to Maven Central's snapshot repository instead, and are replaced by each new build of the same version. To try one, add that repository, limited to Galva's artifacts:
 
 ```kotlin
 dependencyResolutionManagement {
@@ -63,20 +52,16 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
         maven {
-            name = "GalvaGitHubPackages"
-            url = uri("https://maven.pkg.github.com/Galva-io/galva-android")
-            credentials {
-                username = providers.gradleProperty("gpr.user")
-                    .orElse(providers.environmentVariable("GPR_USER")).orNull
-                password = providers.gradleProperty("gpr.key")
-                    .orElse(providers.environmentVariable("GPR_KEY")).orNull
-            }
-            // Only resolve Galva artifacts from this repository.
+            name = "CentralPortalSnapshots"
+            url = uri("https://central.sonatype.com/repository/maven-snapshots/")
             content { includeGroup("io.galva.sdk") }
+            mavenContent { snapshotsOnly() }
         }
     }
 }
 ```
+
+Snapshots are for testing only: they are removed after about 90 days, so ship releases.
 
 ---
 
@@ -93,11 +78,11 @@ dependencies {
 }
 ```
 
-Replace `<version>` with the version you were given (or the latest one listed under the repository's **Packages** tab on GitHub, e.g. `1.3.0-SNAPSHOT`).
+Replace `<version>` with the latest release shown on [Maven Central](https://central.sonatype.com/artifact/io.galva.sdk/galva-sdk), e.g. `1.3.0`.
 
 `galva-sdk` is the only artifact you declare. It brings the SDK's internal modules (`core`, `identity`, `network`, `inapp-message`, `billing`, …) as runtime dependencies; don't add them yourself. Your code compiles against `galva-sdk` alone: every type you use is in `io.galva.sdk`.
 
-**Using RevenueCat?** Declare [`io.galva.sdk:galva-android-revenuecat`](https://github.com/Galva-io/galva-android-revenuecat) instead of `galva-sdk` (it brings it), and add its repository next to this one. Purchases from Galva's messages then go through RevenueCat, and Galva follows RevenueCat's user, so you don't call `identify` yourself. Its README covers the setup.
+**Using RevenueCat?** Declare [`io.galva.sdk:galva-android-revenuecat`](https://github.com/Galva-io/galva-android-revenuecat) instead of `galva-sdk` (it brings it). Purchases from Galva's messages then go through RevenueCat, and Galva follows RevenueCat's user, so you don't call `identify` yourself. Its README covers the setup.
 
 **Why Play Billing is a separate dependency.** Galva drives purchases started from in-app messages through Play Billing, so it must be on the runtime classpath. Leaving it to your app means you control the exact version. If your app already depends on Play Billing directly or through another library (for example RevenueCat), make sure the resolved version is **8.0.0 or newer**:
 
@@ -215,7 +200,7 @@ To test an unreleased change of the SDK in your app:
 ./gradlew publishToMavenLocal
 ```
 
-Then add `mavenLocal()` **before** the GitHub Packages repository in your app's `settings.gradle.kts` and depend on the version set by `VERSION_NAME` in the SDK's `gradle.properties`:
+Then add `mavenLocal()` **first** in your app's `settings.gradle.kts` repositories and depend on the version set by `VERSION_NAME` in the SDK's `gradle.properties`:
 
 ```kotlin
 repositories {
@@ -252,8 +237,7 @@ Everything else keeps working as is. `setPushToken(token)` still registers an FC
 
 | Symptom | Fix |
 |---|---|
-| `Could not GET 'https://maven.pkg.github.com/…'. Received status code 401` | Credentials are missing or wrong. Check `gpr.user` / `gpr.key` and that the token has the `read:packages` scope. |
-| `Could not find io.galva.sdk:galva-sdk:<version>` | The version does not exist, or the repository block is missing / has a `content { }` filter that excludes `io.galva.sdk`. |
+| `Could not find io.galva.sdk:galva-sdk:<version>` | The version is not on [Maven Central](https://central.sonatype.com/artifact/io.galva.sdk/galva-sdk), or `mavenCentral()` is missing from your repositories. A `-SNAPSHOT` version also needs the [snapshot repository](#pre-release-snapshots). A release that was just published can take a little while to become downloadable. |
 | `Unresolved reference 'core'` / `'common'` / `'iam'` in a Galva import, or `Cannot access class 'Configuration'` | Code written for 1.2: the types moved to `io.galva.sdk`. See [Upgrading from 1.2](#upgrading-from-12). |
 | `Dependency 'io.galva.sdk:…' requires libraries and applications that depend on it to compile against version 36 or later` | Raise `compileSdk` to 36. |
 | `Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.2.0, expected version is 1.9.0` | Upgrade your project's Kotlin Gradle plugin to 2.1 or newer. |

@@ -15,27 +15,13 @@ Connects your Android app to [Galva](https://galva.io): Galva decides which subs
 
 ### 1. Install
 
-The SDK is published on GitHub Packages, which needs a GitHub username and a [personal access token (classic)](https://github.com/settings/tokens) with the `read:packages` scope. Put them in your user-level `~/.gradle/gradle.properties`, never in the project:
-
-```properties
-gpr.user=your-github-username
-gpr.key=ghp_xxxxxxxxxxxxxxxxxxxx
-```
-
-Add the repository in `settings.gradle.kts`:
+The SDK is on [Maven Central](https://central.sonatype.com/artifact/io.galva.sdk/galva-sdk), so it needs no extra repository or credentials. Check that your `settings.gradle.kts` lists `mavenCentral()`, as new Android projects do:
 
 ```kotlin
 dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven {
-            url = uri("https://maven.pkg.github.com/Galva-io/galva-android")
-            credentials {
-                username = providers.gradleProperty("gpr.user").orNull
-                password = providers.gradleProperty("gpr.key").orNull
-            }
-        }
     }
 }
 ```
@@ -266,4 +252,4 @@ Tapping a Galva notification opens your launcher activity. To stop pushes to thi
 
 ---
 
-**More:** [integration guide](docs/integration-guide.md) (user properties, events, sessions, opt-out, billing and RevenueCat, logging, Java) · [installation details](docs/installation.md) (credentials on CI, R8, upgrading from 1.2) · [troubleshooting](docs/troubleshooting.md) · [contributing](CONTRIBUTING.md) · License: MIT
+**More:** [integration guide](docs/integration-guide.md) (user properties, events, sessions, opt-out, billing and RevenueCat, logging, Java) · [installation details](docs/installation.md) (snapshots, R8, upgrading from 1.2) · [troubleshooting](docs/troubleshooting.md) · [contributing](CONTRIBUTING.md) · License: MIT
