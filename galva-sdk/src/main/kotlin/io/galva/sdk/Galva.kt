@@ -31,12 +31,15 @@ import io.galva.localstorage.KeyValueStorageFactory
 import io.galva.network.android.HttpAPIIamService
 import io.galva.network.android.HttpAPIIdentifyService
 import io.galva.network.android.HttpAPISDKService
+import io.galva.network.android.HttpAPITransactionService
 import io.galva.network.android.OkHttpClientBuilder
 import io.galva.network.service.IAMService
 import io.galva.operation_queue.policy.SizeOrTimeoutBatchPolicy
 import io.galva.sdk.impl.billing.DefaultBillingManager
 import io.galva.sdk.impl.billing.DeferredBillingManager
 import io.galva.sdk.impl.billing.GalvaProductIdSource
+import io.galva.sdk.impl.billing.PlayPurchases
+import io.galva.sdk.impl.billing.PlayTransaction
 import io.galva.sdk.impl.billing.UnavailableBillingManager
 import io.galva.sdk.impl.deeplink.DeeplinkOpenCommunicationRouterHandler
 import io.galva.sdk.impl.event.EventAttributes
@@ -55,6 +58,7 @@ import io.galva.sdk.impl.operation.DefaultOperationManager
 import io.galva.sdk.impl.session.SdkSettings
 import io.galva.sdk.impl.session.SessionTracker
 import io.galva.sdk.impl.store.SdkInitializeConfigStore
+import io.galva.sdk.impl.transaction.TransactionObserver
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -127,6 +131,13 @@ public class Galva @VisibleForTesting internal constructor(
     @Volatile
     private var _purchaseController: GalvaPurchaseController? = null
 
+    @Volatile
+    private var _transactionObserver: TransactionObserver? = null
+
+    /** Null when Play Billing is unavailable: Galva can't read the account's purchases then. */
+    @Volatile
+    private var _playPurchases: PlayPurchases? = null
+
     /** Runs the purchases in-app messages request; null for the built-in Play Billing flow. */
     internal val purchaseController: GalvaPurchaseController? get() = _purchaseController
 
@@ -171,6 +182,30 @@ public class Galva @VisibleForTesting internal constructor(
         logger.info { "Purchase controller set: ${controller?.javaClass?.name ?: "built-in Play Billing"}" }
     }
 
+    /**
+     * Reports the device's newest Play purchase to Galva now, instead of on the next app entry.
+     *
+     * Galva links each Play purchase to the user who made it. It reports purchases made in its
+     * in-app messages right away, and the account's purchases every time the app comes to the
+     * foreground. Call this right after your own billing code (your paywall, another billing SDK)
+     * completes a purchase, or from a "Restore purchases" action, so Galva doesn't wait for the
+     * next app entry.
+     *
+     * Returns immediately; safe to call at any time and more than once. Nothing is sent while the
+     * user is opted out.
+     */
+    public fun reconcileTransactions() {
+        // Queued like identify / logout, so the report goes to the user they leave in place.
+        channel.trySend(GalvaEvent.ReconcileTransactions)
+    }
+
+    /** A purchase completed in an in-app message, through Galva's or the app's billing client. */
+    internal fun reportTransaction(transaction: GalvaTransaction) {
+        val observer = _transactionObserver ?: return
+        val purchase = PlayTransaction(transaction.orderId, transaction.purchaseToken, transaction.purchaseTime, purchased = true)
+        galvaScope.launch { observer.onTransactionCompleted(purchase) }
+    }
+
     /** apiFetch proxy used by in-app message bundles; null until the SDK is set up. */
     internal val iamService: IAMService? get() = _iamService
 
@@ -199,6 +234,7 @@ public class Galva @VisibleForTesting internal constructor(
 
             is GalvaEvent.SetPushToken -> setPushTokenInternal(event.token, event.provider)
             is GalvaEvent.ClearPushToken -> clearPushTokenInternal()
+            GalvaEvent.ReconcileTransactions -> sweepTransactions()
             is GalvaEvent.UpdateProperties -> updatePropertiesInternal(event.properties)
             is GalvaEvent.TrackNotification -> try {
                 trackInternal(event.eventName, event.properties)
@@ -209,7 +245,10 @@ public class Galva @VisibleForTesting internal constructor(
 
             is GalvaEvent.Track -> trackInternal(event.eventName, event.properties)
             is GalvaEvent.SetOptOut -> setOptOutInternal(event.optedOut)
-            GalvaEvent.Foreground -> sessionTracker?.handleForeground()
+            GalvaEvent.Foreground -> {
+                sessionTracker?.handleForeground()
+                sweepTransactions()
+            }
 
             is GalvaEvent.HandleOpenURL -> _deeplinkRouter?.handle(event.uri)
             GalvaEvent.ProcessPendingDeeplink -> _deeplinkRouter?.handlePending()
@@ -339,6 +378,16 @@ public class Galva @VisibleForTesting internal constructor(
             UnavailableBillingManager()
         }
         billingManagerReady.complete(billing)
+        val transactionObserver = TransactionObserver(
+            service = HttpAPITransactionService(configuration.env.baseAPIUrl, httpClient, logger),
+            identity = { identity.current },
+            isOptedOut = { trackingOptedOut },
+            logger = logger,
+        ).also { _transactionObserver = it }
+        (billing as? DefaultBillingManager)?.purchases?.let { purchases ->
+            _playPurchases = purchases
+            galvaScope.launch { purchases.updates.collect { transactionObserver.onPurchasesUpdated(it) } }
+        }
         val inAppMessagingManager = DefaultInAppMessagingManager.create(
             logger = logger,
             identityService = identifyService,
@@ -575,6 +624,13 @@ public class Galva @VisibleForTesting internal constructor(
         channel.trySend(GalvaEvent.Logout)
     }
 
+    /** On every app entry and [reconcileTransactions]: reports the account's newest Play purchase, off the event queue. */
+    private fun sweepTransactions() {
+        val observer = _transactionObserver ?: return
+        val purchases = _playPurchases ?: return
+        galvaScope.launch { observer.sweep(purchases) }
+    }
+
     private suspend fun logoutInternal() {
         val identity = identityManager ?: return
         // Drop the signed-out user's undelivered operations so none of them is sent after the
@@ -585,6 +641,8 @@ public class Galva @VisibleForTesting internal constructor(
         identity.logout()
         // Seen / presented messages belonged to the signed-out user.
         _inAppMessageManager?.reset()
+        // The new anonymous user reports the device's purchases again on the next app entry.
+        _transactionObserver?.reset()
         logger.info { "Logged out; now anonymous as ${identity.current.anonymousId}" }
         record(
             APIOperation.CreateAnonymousId(
@@ -855,6 +913,7 @@ public class Galva @VisibleForTesting internal constructor(
 
         data class SetPushToken(val token: String, val provider: PushProvider) : GalvaEvent()
         data object ClearPushToken : GalvaEvent()
+        data object ReconcileTransactions : GalvaEvent()
         data class UpdateProperties(val properties: List<ProfileProperty>) : GalvaEvent()
 
         data class TrackNotification(

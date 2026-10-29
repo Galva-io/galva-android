@@ -44,8 +44,11 @@ class InAppMessagePurchaseTest {
         )
     }
 
-    private fun viewModel(controller: GalvaPurchaseController?) =
-        InAppMessageViewModel(billing, mock<IAMService>(), purchaseController = { controller }, logger = NoOpLogger)
+    private val reported = mutableListOf<GalvaTransaction>()
+
+    private fun viewModel(controller: GalvaPurchaseController?) = InAppMessageViewModel(
+        billing, mock<IAMService>(), purchaseController = { controller }, logger = NoOpLogger, onPurchased = { reported += it },
+    )
 
     private fun purchase(controller: GalvaPurchaseController?): Result<JsonObject> = runBlocking {
         viewModel(controller).purchase(activity, request, messageId = "msg-1")
@@ -88,6 +91,17 @@ class InAppMessagePurchaseTest {
         val answer = purchase(controller { it.purchaseWithPlayBilling() }).getOrThrow()
 
         assertEquals(JsonPrimitive("GPA.play"), answer["transaction"]!!.jsonObject["id"])
+    }
+
+    @Test
+    fun `completed purchases are reported to Galva, whichever billing layer ran them`() {
+        purchase(controller { GalvaPurchaseResult.Completed(transaction) })
+        purchase(controller = null)
+        purchase(controller { GalvaPurchaseResult.Pending })
+        purchase(controller { GalvaPurchaseResult.Cancelled })
+        purchase(controller { throw GalvaPurchaseException.Failed("declined") })
+
+        assertEquals(listOf("GPA.1", "GPA.play"), reported.map { it.orderId })
     }
 
     @Test

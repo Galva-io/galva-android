@@ -90,6 +90,7 @@ public final class io/galva/sdk/Galva {
 	public final fun isOptedOut ()Z
 	public final fun logout ()V
 	public final fun observeInAppMessages (Landroidx/lifecycle/LifecycleOwner;Lio/galva/sdk/InAppMessageListener;)V
+	public final fun reconcileTransactions ()V
 	public final fun setEnableLogging (Z)V
 	public final fun setLogLevel (Lio/galva/sdk/LogLevel;)V
 	public final fun setLogger (Lio/galva/sdk/LogSink;)V

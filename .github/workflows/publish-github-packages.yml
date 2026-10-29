@@ -3,7 +3,7 @@ name: Publish SDK to GitHub Packages
 on:
   push:
     branches:
-      - main
+      - identity-module
 
 permissions:
   contents: read

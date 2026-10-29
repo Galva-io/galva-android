@@ -152,7 +152,7 @@ Galva.instance.setOptOut(true)    // stop tracking
 Galva.instance.isOptedOut         // synchronous read, safe on any thread
 ```
 
-While opted out, `track`, `identify`, `updateProperties`, push-token registration, push interaction events and `session_start` are dropped, and events still waiting to be uploaded are deleted when switching to opted out. In-app messages keep working. The choice is stored on the device and survives restarts; `setOptOut(false)` turns tracking back on.
+While opted out, `track`, `identify`, `updateProperties`, push-token registration, push interaction events, purchase reports and `session_start` are dropped, and events still waiting to be uploaded are deleted when switching to opted out. In-app messages keep working. The choice is stored on the device and survives restarts; `setOptOut(false)` turns tracking back on.
 
 ---
 
@@ -442,6 +442,13 @@ A device has one Galva push token: registering a token from another provider rep
 Galva uses Google Play Billing to run purchases that start **inside** an in-app message (for example a win-back offer). You do not need to write any billing code for that — only add the `billing-ktx` dependency (see [installation](installation.md#2-add-the-dependencies)).
 
 Purchases started inside a Galva message are acknowledged by Galva's backend, so you don't need to acknowledge them yourself. To unlock the purchased content, keep refreshing entitlements the way your app already does — Google recommends calling `BillingClient.queryPurchasesAsync()` from `onResume()`, which also picks up purchases your app did not start itself.
+
+So Galva can attribute every subscription to the right user, the SDK reports Play purchases (order id and purchase token) with the current user's ids, once per purchase and user:
+
+- purchases made in Galva's in-app messages, right away, whichever billing layer ran them;
+- the account's newest completed purchase each time the app comes to the foreground, which covers purchases from your own paywall or another billing SDK.
+
+To report a purchase from your own paywall right away instead of on the next app entry, call `Galva.instance.reconcileTransactions()` once your billing code has completed it (for example in your `onPurchasesUpdated`), or from a "Restore purchases" action. The RevenueCat package does this for you whenever RevenueCat reports a purchase. Nothing is sent while the user is [opted out](#privacy-and-opt-out).
 
 ### RevenueCat
 

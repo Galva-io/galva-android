@@ -39,6 +39,7 @@ class MainThreadBudgetTest {
             "track" to { galva.track("Perf") },
             "track(attributes)" to { galva.track("Perf", mapOf("sku" to "pro", "price" to 9.99, "trial" to true)) },
             "checkForMessages" to { galva.checkForMessages() },
+            "reconcileTransactions" to { galva.reconcileTransactions() },
             "currentUserId" to { galva.currentUserId },
             "isAnonymous" to { galva.isAnonymous },
             "setOptOut" to { galva.setOptOut(false) },

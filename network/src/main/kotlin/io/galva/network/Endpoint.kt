@@ -13,6 +13,7 @@ enum class Endpoint(val path: String) {
     SDK("/sdk"),
     Products("/products"),
     Communications("/communications"),
+    Transactions("/v1/transactions"),
     EMPTY("")
 }
 

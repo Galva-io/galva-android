@@ -28,6 +28,7 @@ public class JavaApiTest {
 
         galva.observeInAppMessages(activity, message -> galva.showMessage(activity, message));
         galva.checkForMessages();
+        galva.reconcileTransactions();
 
         galva.identify("user_42");
         galva.identify("user_42", "jane@example.com");

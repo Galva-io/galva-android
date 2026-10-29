@@ -94,6 +94,7 @@ object MockBackend {
                 method == "POST" && path == BATCH_COLLECT -> json("""{"success":true}""")
                 method == "GET" && path == COMMUNICATIONS -> json(communicationsPage())
                 method == "POST" && resolveId != null -> json(resolved(resolveId))
+                method == "POST" && path == "/v1/transactions/observe" -> json("{}")
                 method == "GET" && path.startsWith("/webview/") && path.endsWith(".html") ->
                     MockResponse().setHeader("Content-Type", "text/html; charset=utf-8").setBody(bundleHtml)
                 // apiFetch targets used by the test bundle.

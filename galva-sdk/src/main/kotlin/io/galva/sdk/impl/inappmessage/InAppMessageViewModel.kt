@@ -28,6 +28,7 @@ import io.galva.sdk.GalvaPurchaseController
 import io.galva.sdk.GalvaPurchaseException
 import io.galva.sdk.GalvaPurchaseRequest
 import io.galva.sdk.GalvaPurchaseResult
+import io.galva.sdk.GalvaTransaction
 import io.galva.sdk.impl.billing.PlayBillingPurchase
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -42,6 +43,8 @@ internal class InAppMessageViewModel(
     private val iamService: IAMService?,
     private val purchaseController: () -> GalvaPurchaseController? = { Galva.instance.purchaseController },
     private val logger: Logger = Galva.instance.logger,
+    /** Reports a completed purchase to Galva right away, whichever billing layer ran it. */
+    private val onPurchased: (GalvaTransaction) -> Unit = { Galva.instance.reportTransaction(it) },
 ) : ViewModel() {
 
     /**
@@ -74,6 +77,8 @@ internal class InAppMessageViewModel(
                     GalvaPurchaseResult.Cancelled -> "Purchase of $product cancelled by the user"
                 }
             }
+            // A controller's billing client (e.g. RevenueCat's) doesn't reach Galva's purchase listener.
+            if (result is GalvaPurchaseResult.Completed) onPurchased(result.transaction)
             Result.success(PurchaseBridgeMapper.result(result, request))
         } catch (e: CancellationException) {
             throw e

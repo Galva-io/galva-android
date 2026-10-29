@@ -55,6 +55,7 @@ class CrashSafetyTest {
         galva.handleOpenURL(Uri.parse("gvdemo://openCommunication?communicationId=c"))
         galva.showMessage(activity, Message("m-1"))
         galva.checkForMessages()
+        galva.reconcileTransactions()
         galva.setPurchaseController(null)
         galva.setLogLevel(LogLevel.DEBUG)
 

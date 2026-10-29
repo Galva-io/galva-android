@@ -46,7 +46,9 @@ internal class DefaultBillingManager(
     private val launcher: BillingLauncher,
     private val logger: Logger,
     private val scope: CoroutineScope,
-    private val launchDispatcher: CoroutineDispatcher = Dispatchers.Default
+    private val launchDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    /** The account's Play purchases, for the transaction observer. */
+    val purchases: PlayPurchases? = null,
 ) : BillingManager {
     override val catalog: Flow<FullCatalog> = catalogStore.observe()
 
@@ -222,7 +224,8 @@ internal class DefaultBillingManager(
                 scope = scope,
                 purchaseMapper = purchaseMapper,
                 entitlementStore = entitlementStore,
-                purchaseResolver = purchaseResolver
+                purchaseResolver = purchaseResolver,
+                purchases = PlayPurchaseSource(billingClient, connection, purchasesUpdatedListener, logger),
             )
         }
     }
