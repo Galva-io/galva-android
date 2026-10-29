@@ -119,6 +119,7 @@ class MavenPublishingConventionPlugin : Plugin<Project> {
             taskNames.any { it.contains("publishToMavenLocal", ignoreCase = true) } -> "mavenLocal"
             taskNames.any { it.contains("publishallpublicationstomavencentralrepository", ignoreCase = true) } -> "mavenCentral"
             taskNames.any { it.contains("publishToMavenCentral", ignoreCase = true) } -> "mavenCentral"
+            taskNames.any { it.contains("publishAndReleaseToMavenCentral", ignoreCase = true) } -> "mavenCentral"
             taskNames.any { it.contains("publishAllPublicationsToGitHubPackagesRepository", ignoreCase = true) } -> "githubPackages"
             else -> "local"
         }

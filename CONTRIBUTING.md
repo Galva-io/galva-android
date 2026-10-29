@@ -135,8 +135,19 @@ Pull requests run lint and unit tests on CI (`.github/workflows/pull-request-che
 ## Releasing
 
 1. Set `VERSION_NAME` in `gradle.properties` (semantic versioning; `-SNAPSHOT` for pre-releases).
-2. Merge to `main`. The `Publish SDK to GitHub Packages` workflow builds, signs and publishes all modules to `https://maven.pkg.github.com/Galva-io/galva-android`.
+2. Merge to `main`. The `Publish SDK to Maven Central` workflow signs and publishes all modules to Maven Central: a `-SNAPSHOT` version to Central's snapshot repository, any other version as a release, which the job waits on until it is published. Maven Central never accepts the same release version twice, so bump `VERSION_NAME` before merging the next release. The workflow can also be started by hand from the Actions tab.
 3. Update the version shown in the docs if the install instructions changed.
+
+Pushes to `identity-module` also publish to GitHub Packages (`https://maven.pkg.github.com/Galva-io/galva-android`), through the `Publish SDK to GitHub Packages` workflow.
+
+The publishing workflows need these repository secrets:
+
+| Secret | Value |
+|---|---|
+| `SONATYPE_USERNAME`, `SONATYPE_PASSWORD` | A Central Portal user token (Account → Generate User Token), not the portal login. Maven Central only. |
+| `SIGNING_KEY` | The ASCII-armored GPG private key that signs the artifacts |
+| `SIGNING_KEY_ID` | Its key ID |
+| `SIGNING_KEY_PASSWORD` | Its passphrase |
 
 To try a build locally before releasing, publish to Maven Local with `./gradlew publishToMavenLocal` (see [docs/installation.md](docs/installation.md#using-a-local-build-of-the-sdk)).
 

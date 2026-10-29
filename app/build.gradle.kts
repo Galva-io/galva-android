@@ -26,8 +26,11 @@ android {
             localProperties.load(FileInputStream(localPropertiesFile))
         }
 
-        // 2. Fetch the value safely (provide a fallback if missing)
-        val apiKey = localProperties.getProperty("GALVA_API_KEY") ?: throw IllegalArgumentException("GALVA_API_KEY not found, please add it to local.properties")
+        // From app/local.properties, else the GALVA_API_KEY environment variable. Without one the
+        // build still works (CI checks, publishing the SDK); the sample then runs with Galva disabled.
+        val apiKey = localProperties.getProperty("GALVA_API_KEY")
+            ?: System.getenv("GALVA_API_KEY")
+            ?: "".also { logger.warn("GALVA_API_KEY isn't set in app/local.properties: the sample app runs with Galva disabled.") }
         buildConfigField("String", "GALVA_API_KEY", "\"$apiKey\"")
 
         // Starts an in-process mock backend and swaps in E2EApplication (src/androidTest).
