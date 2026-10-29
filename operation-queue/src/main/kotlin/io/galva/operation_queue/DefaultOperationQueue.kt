@@ -49,7 +49,7 @@ class DefaultOperationQueue(
         children += scope.launch { transitionTrigger.signals().collect { forceWake.trySend(Unit) } }
     }
 
-    override suspend fun enqueue(payload: String, type: String, id: String?, ownerId: String?) {
+    override suspend fun enqueue(payload: String, type: String, id: String?) {
         logger.verbose { "Enqueued $type: $payload" }
         store.insert(
             StoredOperation(
@@ -58,7 +58,6 @@ class DefaultOperationQueue(
                 payload = payload,
                 createdAt = clock.nowMs(),
                 retryCount = 0,
-                ownerId = ownerId,
             )
         )
         maxStoredCount?.let { cap ->
@@ -76,10 +75,6 @@ class DefaultOperationQueue(
         // Rows claimed by an in-flight send are deleted too; the consumer's later
         // delete/release of those ids is then a no-op, so no restart is needed.
         store.clearAll()
-    }
-
-    override suspend fun clearOwnedBy(ownerId: String) {
-        store.clearOwnedBy(ownerId)
     }
 
     override fun stop() {

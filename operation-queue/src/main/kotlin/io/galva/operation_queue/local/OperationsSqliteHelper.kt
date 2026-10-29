@@ -54,6 +54,8 @@ class OperationsSqliteHelper(
                 locked_at INTEGER,
                 retry_count INTEGER NOT NULL DEFAULT 0,
                 last_error TEXT,
+                -- No longer written: operations aren't purged by identity. Kept so fresh and
+                -- migrated (v1 → v2) databases share one schema.
                 owner_id TEXT
             )
         """

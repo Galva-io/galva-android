@@ -370,23 +370,6 @@ class DefaultOperationQueueTest {
         q.stop()
     }
 
-    // ─── Clearing ────────────────────────────────────────────────────
-
-    @Test
-    fun `clearOwnedBy removes only the operations of that owner`() = runTest {
-        val c = QueueContainer(this).apply { network.setOnline(false) }
-        val q = c.build().also { it.start() }
-
-        q.enqueue(payload = "old-1", type = "default", id = "old-1", ownerId = "anon-old")
-        q.enqueue(payload = "old-2", type = "default", id = "old-2", ownerId = "anon-old")
-        q.enqueue(payload = "new-1", type = "default", id = "new-1", ownerId = "anon-new")
-        q.enqueue(payload = "push", type = "default", id = "push")
-        q.clearOwnedBy("anon-old")
-
-        assertEquals(listOf("new-1", "push"), c.store.ids())
-        q.stop()
-    }
-
     // ─── Persistence ─────────────────────────────────────────────────
 
     @Test

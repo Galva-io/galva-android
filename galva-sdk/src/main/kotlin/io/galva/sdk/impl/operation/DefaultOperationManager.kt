@@ -80,7 +80,6 @@ internal class DefaultOperationManager internal constructor(
             payload = payload,
             type = apiOperation.opType,
             id = UUIDv7.randomUUID().toString(),
-            ownerId = apiOperation.ownerId,
         )
     }
 
@@ -94,10 +93,6 @@ internal class DefaultOperationManager internal constructor(
 
     override suspend fun clearAllOperation() {
         operationQueue.clear()
-    }
-
-    override suspend fun clearOperationsOf(anonymousId: String) {
-        operationQueue.clearOwnedBy(anonymousId)
     }
 
     companion object {

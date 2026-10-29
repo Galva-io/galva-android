@@ -68,7 +68,7 @@ On sign-out:
 Galva.instance.logout()
 ```
 
-`logout()` clears the user binding and starts a fresh anonymous identity. Profile updates of the signed-out user that have not been uploaded yet are discarded, so they can never be attributed to the next user; everything recorded after `logout()` belongs to the new identity. If you registered a push token, call [`setPushToken`](#2-register-the-token) again after the next sign-in.
+`logout()` clears the user binding and starts a fresh anonymous identity. Each call keeps the user it was made as: calls made before `logout()` that have not been uploaded yet (for example while offline) are still sent, as the signed-out user, along with the next user's, and everything recorded after `logout()` belongs to the new identity. If you registered a push token, call [`setPushToken`](#2-register-the-token) again after the next sign-in.
 
 Synchronous reads (only valid **after** `configure`):
 

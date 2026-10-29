@@ -59,11 +59,6 @@ class InMemoryStore : OperationStore {
         refresh()
     }
 
-    override suspend fun clearOwnedBy(ownerId: String) {
-        rows.values.filter { it.ownerId == ownerId }.forEach { rows.remove(it.id); locks.remove(it.id) }
-        refresh()
-    }
-
     override suspend fun trimToNewest(maxCount: Int): Int {
         val excess = rows.values.sortedBy { it.createdAt }.take((rows.size - maxCount).coerceAtLeast(0))
         excess.forEach { rows.remove(it.id); locks.remove(it.id) }

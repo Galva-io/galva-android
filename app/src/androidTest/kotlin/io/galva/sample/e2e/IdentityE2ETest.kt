@@ -10,6 +10,7 @@ import io.galva.sdk.Galva
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -97,6 +98,35 @@ class IdentityE2ETest {
                 scenario.onActivity { text = it.findViewById<TextView>(R.id.status).text.toString() }
                 text.contains(userId)
             }
+        }
+    }
+
+    @Test
+    fun logoutBeforeUpload_stillSendsTheSignedOutUsersCalls_alongWithTheNextUsers() {
+        val firstUser = uniqueId("first-user")
+        val nextUser = uniqueId("next-user")
+        val firstUsersEvent = uniqueId("FirstUserEvent")
+        ActivityScenario.launch(MainActivity::class.java).use {
+            // Back to back, well inside the queue's batching window: the first user's calls are still
+            // queued when logout and the next identify run.
+            Galva.instance.identify(firstUser)
+            Galva.instance.track(firstUsersEvent)
+            Galva.instance.logout()
+            Galva.instance.identify(nextUser)
+
+            val next = MockBackend.awaitBatchMessage("identify of $nextUser") { it.isIdentifyOf(nextUser) }
+            // FIFO queue: the first user's calls were uploaded no later than the next user's.
+            val first = MockBackend.batchMessages().firstOrNull { it.isIdentifyOf(firstUser) }
+            assertNotNull("identify of $firstUser dropped by the logout", first)
+            val event = MockBackend.batchMessages().firstOrNull {
+                it.optString("type") == "track" && it.optString("event") == firstUsersEvent
+            }
+            assertNotNull("track of $firstUsersEvent dropped by the logout", event)
+
+            // Each call kept the identity it was made as.
+            assertEquals(firstUser, event!!.optString("endUserId"))
+            assertEquals(first!!.optString("anonymousId"), event.optString("anonymousId"))
+            assertNotEquals(first.optString("anonymousId"), next.optString("anonymousId"))
         }
     }
 

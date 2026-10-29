@@ -55,7 +55,6 @@ class SqliteOperationStore(
             put("payload", op.payload)
             put("created_at", op.createdAt)
             put("retry_count", op.retryCount)
-            put("owner_id", op.ownerId)
             putNull("lock_token")
             putNull("locked_at")
         }
@@ -76,7 +75,7 @@ class SqliteOperationStore(
             // Select unlocked candidates, oldest first
             val candidates = mutableListOf<StoredOperation>()
             db.rawQuery(
-                """SELECT id, type, payload, created_at, retry_count, owner_id FROM operations
+                """SELECT id, type, payload, created_at, retry_count FROM operations
                    WHERE lock_token IS NULL
                    ORDER BY created_at ASC LIMIT ?""",
                 arrayOf(limit.toString()),
@@ -89,7 +88,6 @@ class SqliteOperationStore(
                             payload = cursor.getString(2),
                             createdAt = cursor.getLong(3),
                             retryCount = cursor.getInt(4),
-                            ownerId = if (cursor.isNull(5)) null else cursor.getString(5),
                         )
                     )
                 }
@@ -202,13 +200,6 @@ class SqliteOperationStore(
         )
         invalidations.tryEmit(Unit)
         deleted
-    }
-
-    override suspend fun clearOwnedBy(ownerId: String): Unit = withContext(ioDispatcher) {
-        val db = helper.writableDatabase
-        val deleted = db.delete("operations", "owner_id = ?", arrayOf(ownerId))
-        invalidations.tryEmit(Unit)
-        if (deleted > 0) logger.debug { "Dropped $deleted undelivered operations of the signed-out identity" }
     }
 
     private companion object {

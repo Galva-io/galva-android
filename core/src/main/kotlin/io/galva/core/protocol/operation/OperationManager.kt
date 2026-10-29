@@ -8,9 +8,6 @@ interface OperationManager {
 
     suspend fun clearAllOperation()
 
-    /** Drops the pending operations recorded for [anonymousId]; operations of other identities are kept. */
-    suspend fun clearOperationsOf(anonymousId: String)
-
     fun startRecordOperation()
     fun stopRecordOperation()
 

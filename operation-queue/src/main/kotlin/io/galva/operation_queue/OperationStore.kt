@@ -27,9 +27,6 @@ interface OperationStore {
     /** remove all operations **/
     suspend fun clearAll()
 
-    /** Remove every operation owned by [ownerId], including rows currently claimed by the consumer. */
-    suspend fun clearOwnedBy(ownerId: String)
-
     /** Delete the oldest rows so at most [maxCount] remain; returns how many were deleted. */
     suspend fun trimToNewest(maxCount: Int): Int
 }

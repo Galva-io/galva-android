@@ -406,32 +406,6 @@ class SqliteOperationStoreTest {
 
     // ── helpers ────────────────────────────────────────────────────────────
 
-    // ── clearOwnedBy ────────────────────────────────────────────────────────
-
-    @Test
-    fun `ownerId round-trips through claimBatch`() = runTest {
-        store.insert(makeOp("op1", ownerId = "anon-1"))
-        store.insert(makeOp("op2", createdAt = nowMs + 1))
-
-        val claimed = store.claimBatch(10, "tok", nowMs)
-        assertEquals(listOf("anon-1", null), claimed.map { it.ownerId })
-    }
-
-    @Test
-    fun `clearOwnedBy removes only that owner's rows, locked or not`() = runTest {
-        store.insert(makeOp("old-locked", ownerId = "anon-old", createdAt = nowMs))
-        store.claimBatch(1, "tok", nowMs)
-        store.insert(makeOp("old-pending", ownerId = "anon-old", createdAt = nowMs + 1))
-        store.insert(makeOp("new", ownerId = "anon-new", createdAt = nowMs + 2))
-        store.insert(makeOp("unowned", createdAt = nowMs + 3))
-
-        store.clearOwnedBy("anon-old")
-        store.releaseAllLocks()
-
-        val remaining = store.claimBatch(10, "tok2", nowMs)
-        assertEquals(listOf("new", "unowned"), remaining.map { it.id })
-    }
-
     @Test
     fun `trimToNewest deletes the oldest rows beyond the cap`() = runTest {
         repeat(5) { store.insert(makeOp("op$it", createdAt = nowMs + it)) }
@@ -462,7 +436,6 @@ class SqliteOperationStoreTest {
 
         val claimed = store.claimBatch(10, "tok", nowMs)
         assertEquals(listOf("legacy"), claimed.map { it.id })
-        assertEquals(null, claimed.single().ownerId)
     }
 
     private fun makeOp(
@@ -471,6 +444,5 @@ class SqliteOperationStoreTest {
         payload: String = """{"id":"$id"}""",
         createdAt: Long = nowMs,
         retryCount: Int = 0,
-        ownerId: String? = null,
-    ) = StoredOperation(id, type, payload, createdAt, retryCount, ownerId)
+    ) = StoredOperation(id, type, payload, createdAt, retryCount)
 }

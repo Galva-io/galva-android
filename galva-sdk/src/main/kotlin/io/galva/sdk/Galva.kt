@@ -633,10 +633,9 @@ public class Galva @VisibleForTesting internal constructor(
 
     private suspend fun logoutInternal() {
         val identity = identityManager ?: return
-        // Drop the signed-out user's undelivered operations so none of them is sent after the
-        // switch. Scoped to that identity: operations of the next identity are never purged.
-        _operationManager?.clearOperationsOf(identity.current.anonymousId)
-        // Recorded after the purge so the endpoint deletion for the signed-out user still goes out.
+        // The signed-out user's undelivered operations stay queued: each was recorded complete
+        // (anonymous id, user id, context), so it is sent as that user alongside the next user's.
+        // The endpoint deletion is recorded the same way, before the switch.
         clearPushTokenInternal()
         identity.logout()
         // Seen / presented messages belonged to the signed-out user.

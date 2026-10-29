@@ -27,8 +27,6 @@ class DeepLinkE2ETest {
         val communicationId = MainActivity.SAMPLE_COMMUNICATION_ID
         val userId = uniqueId("deeplink-user")
         ActivityScenario.launch(MainActivity::class.java).use {
-            // Logging out purges the signed-out user's undelivered events; get them out first.
-            drainSdkQueue()
             ControlPanel.logout()
             awaitCondition("logout to be processed") { Galva.instance.isAnonymous }
 

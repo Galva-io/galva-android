@@ -7,15 +7,12 @@ interface OperationQueue {
     fun start()
 
     /**
-     * Persists an operation. [ownerId] tags it with the identity it belongs to so the
-     * operations of one identity can be purged with [clearOwnedBy].
+     * Persists an operation. [payload] is complete when enqueued (identity included), so it is
+     * sent as is, whichever identity is current by then.
      */
-    suspend fun enqueue(payload: String, type: String, id: String? = null, ownerId: String? = null)
+    suspend fun enqueue(payload: String, type: String, id: String? = null)
     fun flush()
     fun stop()
 
     suspend fun clear()
-
-    /** Removes every pending operation tagged with [ownerId]; other operations are kept. */
-    suspend fun clearOwnedBy(ownerId: String)
 }
