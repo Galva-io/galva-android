@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Lets simpleperf / Android Studio profile this non-debuggable build. -->
+        <profileable android:shell="true" />
+
+        <!-- Performance probe (src/perf), exported for adb in this build only: each run is a fresh process, without Galva
+             (:perf_baseline) or with it (:perf_sdk). Started by scripts/profile.sh. -->
+        <activity
+            android:name=".perf.PerfBaselineActivity"
+            android:exported="true"
+            android:process=":perf_baseline" />
+        <activity
+            android:name=".perf.PerfSdkActivity"
+            android:exported="true"
+            android:process=":perf_sdk" />
+    </application>
+</manifest>

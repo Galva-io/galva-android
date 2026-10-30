@@ -1,0 +1,26 @@
+<resources>
+    <string name="app_name">Galva Demo</string>
+
+    <string name="section_identity">Identity</string>
+    <string name="section_privacy">Privacy</string>
+    <string name="section_messages">In-app messages &amp; push</string>
+
+    <string name="hint_user_id">User id</string>
+    <string name="hint_email">Email</string>
+    <string name="default_email">demo@example.com</string>
+
+    <string name="action_identify">Identify</string>
+    <string name="action_set_email">Set email property</string>
+    <string name="action_logout">Log out</string>
+    <string name="action_track_event">Track \"DemoButtonTapped\"</string>
+    <string name="action_opt_out">Opt out of tracking</string>
+    <string name="action_check_messages">Check for messages</string>
+    <string name="action_open_deep_link">Open sample deep link</string>
+    <string name="action_simulate_push">Simulate Galva push</string>
+
+    <string name="status_format">SDK %1$s\nUser: %2$s (%3$s)\nOpted out: %4$s</string>
+    <string name="status_anonymous">anonymous</string>
+    <string name="status_identified">identified</string>
+    <string name="toast_user_id_required">Enter a user id first</string>
+    <string name="toast_notifications_denied">Notification permission denied</string>
+</resources>

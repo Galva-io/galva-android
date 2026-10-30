@@ -1,0 +1,11 @@
+# Default ignored files
+.idea
+.gradle
+/build
+**/build
+.kotlin
+local.properties
+.DS_Store
+# JVM heap dumps and Git Bash crash dumps
+*.hprof
+*.stackdump
