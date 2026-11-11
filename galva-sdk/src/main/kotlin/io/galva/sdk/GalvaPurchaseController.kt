@@ -52,7 +52,8 @@ public class GalvaPurchaseRequest @GalvaIntegrationApi constructor(
     public val offerId: String?,
     /**
      * The account id Galva attributes this user's purchases to (Play's `obfuscatedAccountId`,
-     * as the SDK attaches it to its own purchases). Attach it when your billing layer lets you.
+     * as the SDK attaches it to its own purchases, unhashed). Attach it when your billing layer
+     * lets you. Empty when the user has no id Play accepts.
      */
     public val obfuscatedAccountId: String,
     /** Id of the in-app message that requested the purchase. */

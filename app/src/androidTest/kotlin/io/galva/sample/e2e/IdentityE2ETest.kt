@@ -102,6 +102,24 @@ class IdentityE2ETest {
     }
 
     @Test
+    fun identify_keepsTheObfuscatedAccountIdUnhashed_andDropsAnInvalidOne() {
+        val userId = uniqueId("user")
+        val accountId = uniqueId("acct")
+        ActivityScenario.launch(MainActivity::class.java).use {
+            Galva.instance.identify(userId, obfuscatedAccountId = accountId)
+            Galva.instance.identify(userId, obfuscatedAccountId = "jane@example.com")
+
+            awaitCondition("both identifies of $userId to upload", MockBackend.BATCH_TIMEOUT_MS) {
+                MockBackend.batchMessages().count { it.isIdentifyOf(userId) } == 2
+            }
+            val sent = MockBackend.batchMessages().filter { it.isIdentifyOf(userId) }
+                .map { it.optJSONObject("traits")?.optString("\$gv_obfuscatedAccountId").orEmpty() }
+            assertEquals(listOf(accountId, ""), sent)
+            awaitCondition("SDK to keep $accountId") { Galva.instance.obfuscatedAccountId == accountId }
+        }
+    }
+
+    @Test
     fun logoutBeforeUpload_stillSendsTheSignedOutUsersCalls_alongWithTheNextUsers() {
         val firstUser = uniqueId("first-user")
         val nextUser = uniqueId("next-user")

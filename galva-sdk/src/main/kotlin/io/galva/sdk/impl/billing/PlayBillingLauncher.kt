@@ -7,6 +7,8 @@ import com.android.billingclient.api.GetBillingConfigParams
 import com.android.billingclient.api.ProductDetails
 import com.android.billingclient.api.Purchase
 import com.android.billingclient.api.QueryProductDetailsParams
+import com.android.billingclient.api.QueryPurchasesParams
+import com.android.billingclient.api.queryPurchasesAsync
 import io.galva.billing.BillingLauncher
 import io.galva.billing.model.BillingLaunchState
 import io.galva.billing.model.Product
@@ -116,28 +118,23 @@ internal class PlayBillingLauncher(
                 BillingFlowParams.ProductDetailsParams.newBuilder()
                     .setProductDetails(productDetails)
                     .setOfferToken(offerToken).build()
-            val currentEntitlement = entitlementStore.get()
+            val replacement = if (productDetails.productType == BillingClient.ProductType.SUBS) {
+                subscriptionReplacement(obfuscatedAccountId)
+            } else {
+                SubscriptionReplacement(oldPurchaseToken = null, obfuscatedAccountId = obfuscatedAccountId)
+            }
             val flowParams =
                 BillingFlowParams.newBuilder().setProductDetailsParamsList(listOf(productParams))
                     .apply {
-                        if(productDetails.productType == BillingClient.ProductType.SUBS){
-                            if(currentEntitlement != null){
-                                val oldSubscription  =cache.get(currentEntitlement.productId)
-                                if(oldSubscription?.productType == BillingClient.ProductType.SUBS){
-                                    logger.debug { "Upgrading from ${currentEntitlement.productId} to $productId" }
-                                    setSubscriptionUpdateParams(
-                                        BillingFlowParams.SubscriptionUpdateParams.newBuilder()
-                                            .setOldPurchaseToken(currentEntitlement.purchaseToken)
-                                            .build()
-                                    )
-                                }
-                            }
+                        replacement.oldPurchaseToken?.let { oldPurchaseToken ->
+                            logger.debug { "Replacing the owned subscription with $productId" }
+                            setSubscriptionUpdateParams(
+                                BillingFlowParams.SubscriptionUpdateParams.newBuilder()
+                                    .setOldPurchaseToken(oldPurchaseToken)
+                                    .build()
+                            )
                         }
-                    }
-                    .apply {
-                        if(currentEntitlement == null || productDetails.productType == BillingClient.ProductType.INAPP){
-                            obfuscatedAccountId?.let { setObfuscatedAccountId(it) }
-                        }
+                        replacement.obfuscatedAccountId?.let { setObfuscatedAccountId(it) }
                     }.build()
             val eventChannel = purchaseEvents.subscribe()
             try {
@@ -190,6 +187,38 @@ internal class PlayBillingLauncher(
         }
 
 
+    }
+
+    /** How a subscription purchase replaces the account's owned subscription; see [SubscriptionReplacement.select]. */
+    private suspend fun subscriptionReplacement(accountId: String?): SubscriptionReplacement {
+        queryOwnedSubscriptions()?.let { return SubscriptionReplacement.select(it, accountId) }
+        // Play didn't answer: replace the subscription Galva's client last saw bought, whose
+        // account id is unknown, so none is attached.
+        val entitlement = entitlementStore.get()
+            ?.takeIf { cache.get(it.productId)?.productType == BillingClient.ProductType.SUBS }
+        return SubscriptionReplacement(
+            oldPurchaseToken = entitlement?.purchaseToken,
+            obfuscatedAccountId = if (entitlement == null) accountId else null,
+        )
+    }
+
+    /** The account's purchased (not pending) subscriptions, or null when Play can't tell. */
+    private suspend fun queryOwnedSubscriptions(): List<OwnedSubscription>? = try {
+        val params = QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.SUBS).build()
+        val result = billingClient.queryPurchasesAsync(params)
+        if (result.billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
+            result.purchasesList
+                .filter { it.purchaseState == Purchase.PurchaseState.PURCHASED }
+                .map { it.toOwnedSubscription() }
+        } else {
+            logger.debug { "queryPurchases(subs) failed: ${result.billingResult.responseCode}" }
+            null
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        logger.debug(e) { "queryPurchases(subs) failed" }
+        null
     }
 
     /**

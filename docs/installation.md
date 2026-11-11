@@ -78,7 +78,7 @@ dependencies {
 }
 ```
 
-Replace `<version>` with the latest release shown on [Maven Central](https://central.sonatype.com/artifact/io.galva.sdk/galva-sdk), e.g. `1.4.0`.
+Replace `<version>` with the latest release shown on [Maven Central](https://central.sonatype.com/artifact/io.galva.sdk/galva-sdk), e.g. `1.5.0`.
 
 `galva-sdk` is the only artifact you declare. It brings the SDK's internal modules (`core`, `identity`, `network`, `inapp-message`, `billing`, …) as runtime dependencies; don't add them yourself. Your code compiles against `galva-sdk` alone: every type you use is in `io.galva.sdk`.
 
@@ -214,6 +214,10 @@ repositories {
 Remove `mavenLocal()` again when you are done — it is easy to ship a stale local build by accident.
 
 ---
+
+## Upgrading from 1.4
+
+1.5.0 attaches `obfuscatedAccountId` to Play purchases as it is, instead of its SHA-256 hash, so it matches the id your backend uses (see [obfuscated account id](integration-guide.md#obfuscated-account-id)). `identify` now drops an `obfuscatedAccountId` that is blank, over 64 characters or an email address. Purchases made before the upgrade keep the hashed id; when Galva replaces such a subscription, it reuses that purchase's id, as Play requires.
 
 ## Upgrading from 1.2
 
