@@ -17,8 +17,8 @@ import io.galva.common.logger.LogLevel as InternalLogLevel
 import io.galva.common.logger.Logger
 import io.galva.common.utils.AppInfoSource
 import io.galva.common.utils.EmailValidator
+import io.galva.common.utils.ObfuscatedAccountIdValidator
 import io.galva.common.utils.NotificationUtils
-import io.galva.common.utils.HashUtils
 import io.galva.common.utils.PlayBillingVersion
 import io.galva.core.protocol.operation.APIOperation
 import io.galva.core.protocol.operation.OperationManager
@@ -246,7 +246,7 @@ public class Galva @VisibleForTesting internal constructor(
                     productId = productId,
                     basePlanId = basePlanId,
                     offerId = offerId,
-                    obfuscatedAccountId = HashUtils.hashToSafeToken(obfuscatedAccountId),
+                    obfuscatedAccountId = purchaseAccountId,
                 ),
                 offerRequested = offerId != null,
             )
@@ -630,6 +630,12 @@ public class Galva @VisibleForTesting internal constructor(
     /**
      * Identifies the current user. An invalid [email] is dropped (the rest of the call still
      * applies), mirroring the iOS SDK's client-side validation.
+     *
+     * [obfuscatedAccountId] replaces the generated one and is attached, unchanged, to the Play
+     * purchases this user makes through Galva. Pass the id your backend already attaches to
+     * its own purchases, so Play matches them for upgrades and downgrades. It must not be
+     * blank, be over 64 characters or be an email address; such a value is dropped and the
+     * current id kept.
      */
     @JvmOverloads
     public fun identify(userId: String, email: String? = null, obfuscatedAccountId: String? = null) {
@@ -637,7 +643,7 @@ public class Galva @VisibleForTesting internal constructor(
     }
 
     private suspend fun identifyInternal(
-        userId: String, requestedEmail: String? = null, obfuscatedAccountId: String? = null
+        userId: String, requestedEmail: String? = null, requestedObfuscatedAccountId: String? = null
     ) {
         if (trackingOptedOut) {
             logger.debug { "identify dropped (opted out)" }
@@ -646,6 +652,10 @@ public class Galva @VisibleForTesting internal constructor(
         val identity = identityManager ?: return
         val email = requestedEmail?.takeIf(EmailValidator::isValid)
         if (requestedEmail != null && email == null) logger.warn { "identify — dropped invalid email" }
+        val obfuscatedAccountId = requestedObfuscatedAccountId?.takeIf(ObfuscatedAccountIdValidator::isValid)
+        if (requestedObfuscatedAccountId != null && obfuscatedAccountId == null) {
+            logger.warn { "identify — dropped invalid obfuscatedAccountId (blank, over 64 characters or an email)" }
+        }
         identity.identify(userId, email, obfuscatedAccountId)
         logger.info { "Identified user $userId" }
         record(
@@ -726,6 +736,14 @@ public class Galva @VisibleForTesting internal constructor(
 
     public val obfuscatedAccountId: String
         get() = currentIdentity.obfuscatedAccountId
+
+    /**
+     * [obfuscatedAccountId] as attached to Play purchases, unhashed so it matches what the app's
+     * backend knows; null when Play would reject it (empty while loading, or an id stored by an
+     * SDK before 1.5.0 that is over 64 characters or an email).
+     */
+    internal val purchaseAccountId: String?
+        get() = obfuscatedAccountId.takeIf(ObfuscatedAccountIdValidator::isValid)
 
     public val isAnonymous: Boolean
         get() = currentIdentity.userId.isNullOrEmpty()

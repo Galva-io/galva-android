@@ -5,7 +5,6 @@ import io.galva.billing.BillingManager
 import io.galva.billing.model.BillingLaunchState
 import io.galva.billing.model.BillingLaunchState.FailureKind
 import io.galva.common.logger.NoOpLogger
-import io.galva.common.utils.HashUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -49,7 +48,7 @@ class GalvaPurchaseTest {
     }
 
     @Test
-    fun `the Play flow gets the ids and the hashed account id`() {
+    fun `the Play flow gets the ids and the account id unhashed`() {
         val billing = billing(
             BillingLaunchState.Launching("pro", "t"),
             BillingLaunchState.Completed("pro", "t", "play-token", "GPA.1", 42L, false, "acct"),
@@ -57,7 +56,7 @@ class GalvaPurchaseTest {
 
         val result = purchase(billing)
 
-        verify(billing).launchBilling(activity, "pro", "monthly", "intro", HashUtils.hashToSafeToken(galva.obfuscatedAccountId))
+        verify(billing).launchBilling(activity, "pro", "monthly", "intro", galva.purchaseAccountId)
         assertEquals(
             GalvaPurchaseResult.Completed(GalvaTransaction("GPA.1", "pro", "play-token", 42L, "acct", false)),
             result,

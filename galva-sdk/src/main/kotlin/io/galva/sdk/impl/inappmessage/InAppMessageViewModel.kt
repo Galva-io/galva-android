@@ -12,7 +12,6 @@ import io.galva.billing.model.OfferWithPhasesModel
 import io.galva.billing.model.PricingPhase
 import io.galva.common.logger.Logger
 import io.galva.common.utils.AppInfoSource
-import io.galva.common.utils.HashUtils
 import io.galva.iam.PageContext
 import io.galva.iam.SafeArea
 import io.galva.iam.bridge.BridgeError
@@ -59,7 +58,7 @@ internal class InAppMessageViewModel(
             productId = request.productId,
             basePlanId = request.basePlanId,
             offerId = request.offerId,
-            obfuscatedAccountId = purchaseAccountId(),
+            obfuscatedAccountId = purchaseAccountId().orEmpty(),
             messageId = messageId,
             playBillingPurchase = { purchaseWithPlayBilling(activity, request) },
         )
@@ -103,8 +102,8 @@ internal class InAppMessageViewModel(
             offerRequested = request.offerId != null,
         )
 
-    /** Value attached to Play purchases: the identity's obfuscatedAccountId, hashed. */
-    private fun purchaseAccountId() = HashUtils.hashToSafeToken(Galva.instance.obfuscatedAccountId)
+    /** Value attached to Play purchases: the identity's obfuscatedAccountId, as is. */
+    private fun purchaseAccountId() = Galva.instance.purchaseAccountId
 
     private var _storefrontCountryCode: String? = null
     val storefrontCountryCode

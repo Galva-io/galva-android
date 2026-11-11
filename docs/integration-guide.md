@@ -78,6 +78,18 @@ Galva.instance.currentUserId        // your userId, or the anonymous id
 Galva.instance.obfuscatedAccountId  // stable per-identity id used for Play Billing attribution
 ```
 
+### Obfuscated account id
+
+Galva attaches an `obfuscatedAccountId` to the Play purchases it runs (in-app messages and `purchase`). By default it's an id the SDK generates for each identity. If your backend already attaches its own `obfuscatedAccountId` to Play purchases, pass that value to `identify` so a Galva offer can upgrade or downgrade a subscription bought outside Galva:
+
+```kotlin
+Galva.instance.identify("user_42", obfuscatedAccountId = backendAccountId)
+```
+
+Since 1.5.0 the value is stored and attached exactly as you pass it; earlier versions attached its SHA-256 hash. Play's rules apply, so a value that is blank, over 64 characters or an email address is dropped with a warning and the current id is kept. Don't put personal data in it.
+
+When the user already has a subscription, a Galva purchase replaces it (upgrade or downgrade), and Play turns the change down if the account id differs from the replaced purchase's. So Galva replaces the subscription bought with the current id when there is one, and otherwise the newest subscription, keeping that purchase's own id (possibly the hashed id of an earlier SDK). Without a subscription, the purchase carries the current id.
+
 ---
 
 ## User properties
