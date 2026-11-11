@@ -30,7 +30,7 @@ Add the dependencies in `app/build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    implementation("io.galva.sdk:galva-sdk:1.3.0")
+    implementation("io.galva.sdk:galva-sdk:1.4.0")
     // Required: purchases inside Galva's messages run through Play Billing 8.0.0 or newer.
     implementation("com.android.billingclient:billing-ktx:8.0.0")
 }

@@ -78,7 +78,7 @@ dependencies {
 }
 ```
 
-Replace `<version>` with the latest release shown on [Maven Central](https://central.sonatype.com/artifact/io.galva.sdk/galva-sdk), e.g. `1.3.0`.
+Replace `<version>` with the latest release shown on [Maven Central](https://central.sonatype.com/artifact/io.galva.sdk/galva-sdk), e.g. `1.4.0`.
 
 `galva-sdk` is the only artifact you declare. It brings the SDK's internal modules (`core`, `identity`, `network`, `inapp-message`, `billing`, …) as runtime dependencies; don't add them yourself. Your code compiles against `galva-sdk` alone: every type you use is in `io.galva.sdk`.
 

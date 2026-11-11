@@ -18,6 +18,7 @@ import io.galva.common.logger.Logger
 import io.galva.common.utils.AppInfoSource
 import io.galva.common.utils.EmailValidator
 import io.galva.common.utils.NotificationUtils
+import io.galva.common.utils.HashUtils
 import io.galva.common.utils.PlayBillingVersion
 import io.galva.core.protocol.operation.APIOperation
 import io.galva.core.protocol.operation.OperationManager
@@ -38,6 +39,7 @@ import io.galva.operation_queue.policy.SizeOrTimeoutBatchPolicy
 import io.galva.sdk.impl.billing.DefaultBillingManager
 import io.galva.sdk.impl.billing.DeferredBillingManager
 import io.galva.sdk.impl.billing.GalvaProductIdSource
+import io.galva.sdk.impl.billing.PlayBillingPurchase
 import io.galva.sdk.impl.billing.PlayPurchases
 import io.galva.sdk.impl.billing.PlayTransaction
 import io.galva.sdk.impl.billing.UnavailableBillingManager
@@ -197,6 +199,70 @@ public class Galva @VisibleForTesting internal constructor(
     public fun reconcileTransactions() {
         // Queued like identify / logout, so the report goes to the user they leave in place.
         channel.trySend(GalvaEvent.ReconcileTransactions)
+    }
+
+    /**
+     * Buys a Play subscription or product with Galva's built-in Play Billing flow, the one in-app
+     * messages use: [offerId] is resolved from the SDK's catalog, the user's obfuscated account id
+     * is attached, and the completed purchase is reported to Galva right away. Galva's backend
+     * acknowledges it, so you don't acknowledge it yourself.
+     *
+     * Suspends until the purchase screen closes; call it from your paywall's coroutine scope, on
+     * any thread. It doesn't go through a [GalvaPurchaseController]: if your app buys through
+     * another billing layer (RevenueCat, your own), buy through that layer and call
+     * [reconcileTransactions] instead.
+     *
+     * @param productId Play product id, from the Galva catalog.
+     * @param basePlanId Play base plan id.
+     * @param offerId Play offer id to apply, or null for the base plan without an offer.
+     * @return [GalvaPurchaseResult.Completed] with the transaction, [GalvaPurchaseResult.Pending]
+     *   when the payment is not finished yet, or [GalvaPurchaseResult.Cancelled].
+     * @throws GalvaPurchaseException when the purchase fails, including before [configure].
+     */
+    public suspend fun purchase(
+        activity: Activity,
+        productId: String,
+        basePlanId: String,
+        offerId: String? = null,
+    ): GalvaPurchaseResult {
+        if (!isConfigured) throw GalvaPurchaseException.Failed("Call Galva.configure() before purchase()")
+        return purchaseWithPlayBilling(billingManager, activity, productId, basePlanId, offerId)
+    }
+
+    @VisibleForTesting
+    internal suspend fun purchaseWithPlayBilling(
+        billing: BillingManager,
+        activity: Activity,
+        productId: String,
+        basePlanId: String,
+        offerId: String?,
+    ): GalvaPurchaseResult {
+        val product = "$productId/$basePlanId" + (offerId?.let { "/$it" } ?: "")
+        logger.info { "Purchase of $product requested by the app" }
+        val result = try {
+            PlayBillingPurchase.await(
+                billing.launchBilling(
+                    activity = activity,
+                    productId = productId,
+                    basePlanId = basePlanId,
+                    offerId = offerId,
+                    obfuscatedAccountId = HashUtils.hashToSafeToken(obfuscatedAccountId),
+                ),
+                offerRequested = offerId != null,
+            )
+        } catch (e: GalvaPurchaseException) {
+            logger.warn { "Purchase of $product failed: ${e.javaClass.simpleName} (${e.message})" }
+            throw e
+        }
+        when (result) {
+            is GalvaPurchaseResult.Completed -> {
+                logger.info { "Purchase of $product completed (order ${result.transaction.orderId})" }
+                reportTransaction(result.transaction)
+            }
+            GalvaPurchaseResult.Pending -> logger.info { "Purchase of $product pending: payment not finished yet" }
+            GalvaPurchaseResult.Cancelled -> logger.info { "Purchase of $product cancelled by the user" }
+        }
+        return result
     }
 
     /** A purchase completed in an in-app message, through Galva's or the app's billing client. */

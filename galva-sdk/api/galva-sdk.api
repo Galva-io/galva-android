@@ -90,6 +90,8 @@ public final class io/galva/sdk/Galva {
 	public final fun isOptedOut ()Z
 	public final fun logout ()V
 	public final fun observeInAppMessages (Landroidx/lifecycle/LifecycleOwner;Lio/galva/sdk/InAppMessageListener;)V
+	public final fun purchase (Landroid/app/Activity;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun purchase$default (Lio/galva/sdk/Galva;Landroid/app/Activity;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun reconcileTransactions ()V
 	public final fun setEnableLogging (Z)V
 	public final fun setLogLevel (Lio/galva/sdk/LogLevel;)V

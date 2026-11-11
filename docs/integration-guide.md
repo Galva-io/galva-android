@@ -450,6 +450,29 @@ So Galva can attribute every subscription to the right user, the SDK reports Pla
 
 To report a purchase from your own paywall right away instead of on the next app entry, call `Galva.instance.reconcileTransactions()` once your billing code has completed it (for example in your `onPurchasesUpdated`), or from a "Restore purchases" action. The RevenueCat package does this for you whenever RevenueCat reports a purchase. Nothing is sent while the user is [opted out](#privacy-and-opt-out).
 
+### Buying from your own screens
+
+Your app can run a purchase with the same Play Billing flow as Galva's messages by calling `purchase` (since 1.4.0). Galva resolves the offer from its catalog, attaches the user's obfuscated account id, reports the purchase right away and acknowledges it, so you don't:
+
+```kotlin
+lifecycleScope.launch {
+    try {
+        when (val result = Galva.instance.purchase(activity, "pro", "monthly", offerId = "intro")) {
+            is GalvaPurchaseResult.Completed -> unlockPro(result.transaction.purchaseToken)
+            GalvaPurchaseResult.Pending -> showPendingNotice()
+            GalvaPurchaseResult.Cancelled -> Unit
+        }
+    } catch (e: GalvaPurchaseException) {
+        showError(e) // ProductUnavailable, IneligibleForOffer, NetworkError, …
+    }
+}
+```
+
+- `offerId` is optional; leave it null to buy the base plan without an offer.
+- The product must be one of the products configured for your app in Galva; others fail with `ProductUnavailable`.
+- `purchase` suspends until the purchase screen closes and can be called from any thread. Calling it before `configure` throws `GalvaPurchaseException.Failed`.
+- It always uses Galva's Play Billing flow, not a purchase controller. If your app buys through RevenueCat or another billing layer, keep buying through that layer and call `reconcileTransactions()`.
+
 ### RevenueCat
 
 Using RevenueCat? Depend on [`io.galva.sdk:galva-android-revenuecat`](https://github.com/Galva-io/galva-android-revenuecat) instead of `galva-sdk` (it brings `galva-sdk` and shares your app's RevenueCat 10.x) and pass its integration to `configure`. Purchases from Galva's messages then go through RevenueCat, and Galva follows RevenueCat's identity, so `Purchases.logIn` / `logOut` replace your `identify` / `logout` calls:
