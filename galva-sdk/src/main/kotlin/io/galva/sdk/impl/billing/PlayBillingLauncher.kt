@@ -65,13 +65,15 @@ internal class PlayBillingLauncher(
             billingClient.getBillingConfigAsync(
                 GetBillingConfigParams.newBuilder().build(),
                 { response, result ->
+                    // Play Billing can call this listener more than once (e.g. an error after the
+                    // real response when the service disconnects), and a second resume crashes.
                     if (response.responseCode == BillingClient.BillingResponseCode.OK) {
                         storefrontCountryCode = result?.countryCode
                         logger.debug { "Loaded storefront country code: $storefrontCountryCode" }
-                        continuation.resume(storefrontCountryCode)
+                        if (continuation.isActive) continuation.resume(storefrontCountryCode)
                     } else {
                         logger.debug { "Failed to load storefront country code: ${response.debugMessage}" }
-                        continuation.resume(null)
+                        if (continuation.isActive) continuation.resume(null)
                     }
                 })
             continuation.invokeOnCancellation {
@@ -257,7 +259,8 @@ internal class PlayBillingLauncher(
                         productDetailsList.productDetailsList.firstOrNull { productDetails ->
                             productDetails.productId == localProduct.sku
                         }
-                    continuation.resume(productDetails)
+                    // Same guard as queryStorefrontCountryCode: the listener may fire twice.
+                    if (continuation.isActive) continuation.resume(productDetails)
                 }
             } else {
                 continuation.resume(null)
