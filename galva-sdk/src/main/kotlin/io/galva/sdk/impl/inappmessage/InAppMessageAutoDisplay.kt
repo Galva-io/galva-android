@@ -3,6 +3,8 @@ package io.galva.sdk.impl.inappmessage
 import android.app.Activity
 import android.app.Application
 import android.os.Bundle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
 import io.galva.common.logger.Logger
 import io.galva.iam.InAppMessagingManager
 import kotlinx.coroutines.CoroutineScope
@@ -16,7 +18,10 @@ import java.lang.ref.WeakReference
  * modifier. A message published while no app activity is resumed is not shown.
  *
  * [register] runs inside `configure` so the first activity is tracked; [start] runs once the
- * message manager has been built in the background.
+ * message manager has been built in the background. An activity resumed before `configure`
+ * (Flutter and other cross-platform apps configure from their UI) gets no `onActivityResumed`, so
+ * [register] takes it from the context `configure` was given when that context is the resumed
+ * activity.
  */
 internal class InAppMessageAutoDisplay(
     private val application: Application,
@@ -27,8 +32,11 @@ internal class InAppMessageAutoDisplay(
     @Volatile
     private var resumedActivity: WeakReference<Activity>? = null
 
-    fun register() {
+    fun register(hostActivity: Activity? = null) {
         application.registerActivityLifecycleCallbacks(this)
+        if (hostActivity != null && hostActivity.isResumed() && !hostActivity.isSdkActivity()) {
+            resumedActivity = WeakReference(hostActivity)
+        }
     }
 
     fun start(manager: InAppMessagingManager) {
@@ -51,7 +59,7 @@ internal class InAppMessageAutoDisplay(
 
     override fun onActivityResumed(activity: Activity) {
         // The SDK's own activities (message, notification router) never host a message.
-        if (!activity.javaClass.name.startsWith(SDK_PACKAGE)) resumedActivity = WeakReference(activity)
+        if (!activity.isSdkActivity()) resumedActivity = WeakReference(activity)
     }
 
     override fun onActivityPaused(activity: Activity) {
@@ -63,6 +71,13 @@ internal class InAppMessageAutoDisplay(
     override fun onActivityStopped(activity: Activity) = Unit
     override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) = Unit
     override fun onActivityDestroyed(activity: Activity) = Unit
+
+    private fun Activity.isSdkActivity(): Boolean = javaClass.name.startsWith(SDK_PACKAGE)
+
+    // Only a LifecycleOwner (any AndroidX activity, FlutterActivity included) reports its state.
+    private fun Activity.isResumed(): Boolean =
+        !isFinishing && !isDestroyed &&
+            (this as? LifecycleOwner)?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.RESUMED) == true
 
     private companion object {
         const val SDK_PACKAGE = "io.galva.sdk."
