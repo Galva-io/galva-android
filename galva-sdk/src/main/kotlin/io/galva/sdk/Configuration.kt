@@ -7,7 +7,11 @@ public data class Configuration @JvmOverloads constructor(
     /** Emit `session_start` on cold start and on returning after 30+ minutes since the last one. */
     val autoTrackSessions: Boolean = true,
     val env: Environment = Environment.Production,
-    /** Show in-app messages automatically on the visible activity; no `getInAppMessage()` collector needed. */
+    /**
+     * Show in-app messages automatically on the visible activity; no `getInAppMessage()` collector needed.
+     * When `configure` runs after an activity is already resumed (e.g. from a Flutter plugin), pass
+     * that activity as `configure`'s context so the SDK knows it.
+     */
     val autoDisplayInAppMessages: Boolean = false,
     /** Receives SDK logs instead of Logcat (e.g. to forward them to Crashlytics); the level filter still applies. */
     val logSink: LogSink? = null,

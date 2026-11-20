@@ -367,7 +367,7 @@ public class Galva @VisibleForTesting internal constructor(
         val autoDisplay = if (configuration.autoDisplayInAppMessages) {
             val application = appContext as? Application
             if (application == null) logger.warn { "autoDisplayInAppMessages needs an Application context; disabled" }
-            application?.let { InAppMessageAutoDisplay(it, galvaScope, logger).also(InAppMessageAutoDisplay::register) }
+            application?.let { InAppMessageAutoDisplay(it, galvaScope, logger).apply { register(context as? Activity) } }
         } else {
             null
         }
